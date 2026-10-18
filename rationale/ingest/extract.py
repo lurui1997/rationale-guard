@@ -30,6 +30,8 @@ Rules:
 - List alternatives that were explicitly considered or rejected.
 - If the artifact replaces earlier work, list the referenced numbers in supersedes as "#123".
 - Return 0 to 3 decisions. Prefer fewer, higher-quality decisions.
+- Scope notes are not decisions. Do not extract sentences that only say what this PR leaves out
+  ("not included in this PR", "excluding persistence", "out of scope", "this PR only").
 - Output a JSON object with a decisions array. Each decision has summary, rationale, status,
   source_quote, section, alternatives, supersedes, premises, confidence.
 - alternatives, supersedes, and premises MUST be JSON arrays, not strings.
@@ -77,6 +79,27 @@ BOILERPLATE = (
     "merged into",
     "part of 6",
 )
+
+
+def is_scope_note(text: str) -> bool:
+    """A sentence that only bounds this PR is not a decision later diffs can contradict."""
+    lowered = (text or "").lower()
+    if any(
+        phrase in lowered
+        for phrase in (
+            "not included in this pr",
+            "not included in this pull request",
+            "out of scope",
+            "this pr only",
+            "this pull request only",
+            "does not include",
+            "not part of this",
+        )
+    ):
+        return True
+    if re.search(r"\bexcluding\b", lowered) and "instead of" not in lowered and "decided" not in lowered:
+        return True
+    return False
 
 
 def normalize_ws(text: str) -> str:
@@ -239,6 +262,9 @@ def extract_offline(artifact: dict[str, Any], limit: int = 2) -> list[dict[str, 
         if not quote_in_text(quote, text):
             logger.info("Dropping offline decision whose quote is not verbatim")
             continue
+        if is_scope_note(quote):
+            logger.info("Tagging scope note as a non-decision: %s", quote[:80])
+            continue
         issue_numbers = [int(num) for num in re.findall(r"#(\d+)", text)][:5]
         decisions.append(
             {
@@ -280,6 +306,9 @@ def extract_llm(artifact: dict[str, Any]) -> list[dict[str, Any]]:
         quote = (item.get("source_quote") or "").strip()
         if not quote_in_text(quote, text):
             logger.error("Dropping LLM decision; quote is not verbatim in %s", source_id)
+            continue
+        if is_scope_note(quote) or is_scope_note(item.get("summary") or ""):
+            logger.info("Tagging scope note as a non-decision in %s", source_id)
             continue
         summary = (item.get("summary") or quote)[:200]
         rationale = item.get("rationale")

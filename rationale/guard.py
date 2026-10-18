@@ -13,7 +13,8 @@ from typing import Any
 from rationale.db import Store, graph_name_for_repo
 from rationale.diffutil import ParsedDiff, parse_diff
 from rationale.experts import experts_for_paths
-from rationale.judge import JudgeError, judge_candidates, resolve_judge_mode
+from rationale.ingest.extract import is_scope_note
+from rationale.judge import JudgeError, _content_overlap, judge_candidates, resolve_judge_mode
 from rationale.premises import check_premises
 
 CANDIDATE_QUERIES = [
@@ -139,10 +140,43 @@ def rank_score(file_hits: int, symbol_hits: int, confidence: float, wrong_count:
     return base * (0.25 ** int(wrong_count or 0))
 
 
-def select_top(candidates: list[dict[str, Any]], limit: int = 5, minimum: float = 0.5) -> list[dict[str, Any]]:
+def select_top(
+    candidates: list[dict[str, Any]],
+    limit: int = 8,
+    minimum: float = 0.5,
+    per_source: int = 2,
+) -> list[dict[str, Any]]:
+    """Keep about eight candidates. Equal scores break on hunk overlap, and one PR cannot fill every slot."""
     ranked = [item for item in candidates if item["score"] >= minimum]
-    ranked.sort(key=lambda item: item["score"], reverse=True)
-    return ranked[:limit]
+    ranked.sort(key=lambda item: (item["score"], float(item.get("overlap") or 0)), reverse=True)
+    chosen: list[dict[str, Any]] = []
+    used: set[str] = set()
+    counts: dict[str, int] = {}
+    for item in ranked:
+        source = item.get("extracted_from") or item["id"]
+        if counts.get(source, 0) >= per_source:
+            continue
+        counts[source] = counts.get(source, 0) + 1
+        chosen.append(item)
+        used.add(item["id"])
+        if len(chosen) >= limit:
+            return chosen
+    for item in ranked:
+        if item["id"] in used:
+            continue
+        chosen.append(item)
+        if len(chosen) >= limit:
+            break
+    return chosen
+
+
+def _hunk_text(parsed: ParsedDiff) -> str:
+    chunks = []
+    for item in parsed.files:
+        chunks.append(item.path)
+        chunks.append(item.added_text())
+        chunks.append(item.removed_text())
+    return "\n".join(chunks)
 
 
 def run_guard(
@@ -151,6 +185,7 @@ def run_guard(
     diff: str,
     graph: str | None = None,
     judge: str | None = None,
+    source_pr: int | None = None,
 ) -> dict[str, Any]:
     mode = resolve_judge_mode(judge)
     graph_name = graph or graph_name_for_repo(repo)
@@ -169,6 +204,12 @@ def run_guard(
         for row in rows:
             decision_id = row.get("decision_id")
             if not decision_id:
+                continue
+            quote = row.get("quote") or ""
+            summary = row.get("summary") or ""
+            if (row.get("status") or "") == "scope" or is_scope_note(quote) or is_scope_note(summary):
+                continue
+            if source_pr and (row.get("extracted_from") or "") == f"pr:{int(source_pr)}":
                 continue
             bucket = grouped.setdefault(
                 decision_id,
@@ -201,6 +242,7 @@ def run_guard(
                 bucket["vias"].append({"id": row.get("via_id"), "number": row.get("via_number"), "hop": hop})
 
     symbol_set = set(parsed.symbols())
+    hunks = _hunk_text(parsed)
     prepared = []
     for bucket in grouped.values():
         symbol_hits = len(set(bucket["symbols"] or []) & symbol_set)
@@ -208,8 +250,10 @@ def run_guard(
         if "symbol" in bucket["hops"] and file_hits == 0:
             symbol_hits = max(symbol_hits, 1)
         score = rank_score(file_hits, symbol_hits, bucket["confidence"], bucket["wrong_count"])
+        overlap = _content_overlap(hunks, f"{bucket['summary']}\n{bucket['source_quote']}")
         bucket["file_hits"] = file_hits
         bucket["symbol_hits"] = symbol_hits
+        bucket["overlap"] = round(overlap, 4)
         bucket["score"] = round(score, 4)
         prepared.append(bucket)
     chosen = select_top(prepared)

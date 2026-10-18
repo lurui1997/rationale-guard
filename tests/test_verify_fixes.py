@@ -146,7 +146,11 @@ def store():
         current.query("rationale_test_probe", "RETURN 1 AS ok")
     except Exception as exc:  # pragma: no cover
         pytest.fail(f"FalkorDB is not reachable: {exc}")
-    return current
+    yield current
+    try:
+        current.delete_graph("rationale_test_probe")
+    except Exception:
+        pass
 
 
 RISKY = """
@@ -203,6 +207,181 @@ def test_override_stands_down_for_the_llm_judge(store, monkeypatch):
     successors = [row.get("successor_id") for row in after["learned"] if row.get("successor_id")]
     assert successors
     assert not any(call in successors for call in calls)
+    store.delete_graph(name)
+
+
+def test_select_top_breaks_ties_for_the_max_age_shape():
+    from rationale.guard import select_top
+
+    candidates = []
+    for index in range(10):
+        candidates.append(
+            {
+                "id": f"decision:crowd{index}",
+                "score": 3.65,
+                "overlap": 0.0,
+                "extracted_from": "pr:3436",
+            }
+        )
+    candidates.append(
+        {
+            "id": "decision:maxage",
+            "score": 3.65,
+            "overlap": 0.62,
+            "extracted_from": "pr:3651",
+            "summary": "treat max_age=0 as explicit (is not None)",
+        }
+    )
+    chosen = select_top(candidates)
+    ids = [item["id"] for item in chosen]
+    assert "decision:maxage" in ids
+    assert ids.index("decision:maxage") < ids.index("decision:crowd0")
+    capped = select_top(candidates, limit=3)
+    assert sum(1 for item in capped if item["extracted_from"] == "pr:3436") <= 2
+    assert capped[0]["id"] == "decision:maxage"
+
+
+def test_scope_note_is_not_extracted():
+    from rationale.ingest.extract import extract_offline, is_scope_note
+
+    assert is_scope_note("extract only partitioned-cookie support from #2527, excluding persistence")
+    assert is_scope_note("Persistence is not included in this PR.")
+    text = (
+        "This pull request is excluding persistence changes and they are not included in this PR.\n"
+        "Preserve explicit zero prices and missing prices as distinct states."
+    )
+    decisions = extract_offline(
+        {
+            "source_id": "pr:3510",
+            "text": text,
+            "state": "MERGED",
+            "kind": "pr",
+            "url": "https://example.test/3510",
+            "area": "sessions",
+            "structured": True,
+        }
+    )
+    blob = " ".join(item["source_quote"] for item in decisions).lower()
+    assert "not included" not in blob
+    assert "excluding persistence" not in blob
+    assert any("distinct states" in item["source_quote"] for item in decisions)
+
+
+def _sessions_snapshot() -> dict:
+    now = int(time.time())
+    file_change = {"path": "starlette/middleware/sessions.py", "change": "M", "additions": 4, "deletions": 2}
+
+    def pr(number: int) -> dict:
+        return {
+            "number": number,
+            "title": f"sessions {number}",
+            "state": "MERGED",
+            "merged_at": now,
+            "created_at": now,
+            "author": "alice",
+            "url": f"https://example.test/pull/{number}",
+            "body": "",
+            "area": "sessions",
+            "merge_sha": f"{number:040d}"[-40:],
+            "files": [file_change],
+            "fixes": [],
+            "references": [],
+            "supersedes": [],
+        }
+
+    decisions = []
+    for index in range(10):
+        quote = f"Session bookkeeping note {index} about cookie partitioning only."
+        decisions.append(
+            {
+                "id": f"decision:crowd{index}",
+                "summary": quote,
+                "rationale": quote,
+                "status": "accepted",
+                "source_quote": quote,
+                "source_url": "https://example.test/pull/3436",
+                "confidence": 0.65,
+                "extractor": "llm",
+                "extracted_from": "pr:3436",
+                "premises": [],
+                "alternatives": [],
+            }
+        )
+    decisions.append(
+        {
+            "id": "decision:maxage",
+            "summary": "treat max_age=0 as explicit (is not None)",
+            "rationale": "treat max_age=0 as explicit (is not None)",
+            "status": "accepted",
+            "source_quote": "treat max_age=0 as explicit (is not None)",
+            "source_url": "https://example.test/pull/3651",
+            "confidence": 0.65,
+            "extractor": "llm",
+            "extracted_from": "pr:3651",
+            "premises": [],
+            "alternatives": [],
+        }
+    )
+    decisions.append(
+        {
+            "id": "decision:scope",
+            "summary": "extract only partitioned-cookie support from #2527, excluding persistence",
+            "rationale": "extract only partitioned-cookie support from #2527, excluding persistence",
+            "status": "accepted",
+            "source_quote": "extract only partitioned-cookie support from #2527, excluding persistence",
+            "source_url": "https://example.test/pull/3510",
+            "confidence": 0.9,
+            "extractor": "llm",
+            "extracted_from": "pr:3510",
+            "premises": [],
+            "alternatives": [],
+        }
+    )
+    return {
+        "repo": "example/sessions",
+        "areas": [{"slug": "sessions", "name": "Sessions"}],
+        "persons": [{"login": "alice", "is_bot": False, "last_active": now, "activity_evidence": "github"}],
+        "issues": [],
+        "docs": [],
+        "prs": [pr(3436), pr(3651), pr(3510)],
+        "reviews": [],
+        "reverts": [],
+        "decisions": decisions,
+    }
+
+
+MAX_AGE_DIFF = """
+diff --git a/starlette/middleware/sessions.py b/starlette/middleware/sessions.py
+--- a/starlette/middleware/sessions.py
++++ b/starlette/middleware/sessions.py
+@@ -1 +1 @@
+-        if self.max_age is not None:
++        if self.max_age:
+"""
+
+
+def test_sessions_max_age_is_judged_and_own_pr_is_excluded(store, monkeypatch):
+    seen: list[str] = []
+
+    def record(decisions, parsed, mode):
+        verdicts = []
+        for decision in decisions:
+            seen.append(decision["id"])
+            verdicts.append(
+                {"verdict": "unrelated", "judge": mode, "reason": "recorded", "hunk_ref": parsed.paths[0] if parsed.paths else ""}
+            )
+        return verdicts
+
+    monkeypatch.setattr("rationale.guard.judge_candidates", record)
+    name = "rationale_test_sessions"
+    load_snapshot(store, _sessions_snapshot(), name, reset=True)
+    run_guard(store, "example/sessions", MAX_AGE_DIFF, graph=name, judge="offline")
+    assert "decision:maxage" in seen
+    assert "decision:scope" not in seen
+    seen.clear()
+    run_guard(store, "example/sessions", MAX_AGE_DIFF, graph=name, judge="offline", source_pr=3436)
+    assert "decision:maxage" in seen
+    assert not any(item.startswith("decision:crowd") for item in seen)
     store.delete_graph(name)
 
 

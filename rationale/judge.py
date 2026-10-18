@@ -69,7 +69,7 @@ def judge_candidates(decisions: list[dict[str, Any]], parsed: ParsedDiff, mode: 
     """Judge every candidate. LLM calls run concurrently and time out instead of falling back."""
     if len(decisions) <= 1 or mode != "llm":
         return [judge_candidate(item, parsed, mode) for item in decisions]
-    workers = min(5, len(decisions))
+    workers = min(8, len(decisions))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(judge_candidate, item, parsed, mode) for item in decisions]
         try:
