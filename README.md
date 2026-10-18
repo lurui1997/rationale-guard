@@ -125,16 +125,21 @@ Four extra cases avoid the offline cue words (`?? 0`, "default allow", "stop pol
 
 Paraphrase suite, offline: recall **0.00** (0/3), false positives **0/1**.
 
-### LLM judge (measured before concurrent calls)
+### Measured on af5932a (before the candidate-selection fix)
 
-An independent run on commit `a3b27b3` with `deepseek-chat` and the original 12 cue-shaped diffs, two repetitions, FalkorDB 4.22. Every case received `judge=llm`. Exit code 0. No fallback.
+Independent verification of commit `af5932a` with `deepseek-chat`, FalkorDB 4.22.1, and all 16 cases, two LLM runs. Every case was `judge=llm`, exit 0, no fallback. These numbers predate the tie-break, the per-PR slot cap, and the scope-note filter. Re-measure after that change before quoting them as current.
 
-| run | recall | false positives | graph p50 / p95 | total p50 / p95 | wall |
-|---|---|---|---|---|---|
-| 1 | 1.00 (6/6) | 0/6 | 14.6 / 16.7 ms | 6,608 / 8,588 ms | 76 s |
-| 2 | 1.00 (6/6) | 0/6 | 13.4 / 17.4 ms | 6,585 / 7,483 ms | 73 s |
+| | recall | false positives | graph p50 / p95 | per-diff p50 / p95 |
+|---|---|---|---|---|
+| LLM run 1 | 0.89 (8/9) | 0/7 | 12.3 / 17.6 ms | 1.55 s / 2.02 s |
+| LLM run 2 | 0.89 (8/9) | 0/7 | 12.3 / 16.8 ms | 1.40 s / 1.97 s |
+| Offline | 0.67 (6/9) | 0/7 | 8.9 / 15.5 ms | about 9 / 16 ms |
 
-Those totals are one sequential DeepSeek call per candidate, up to five. `usage_checkpoint_price_zero` returned 2 findings; `idle_comment` returned one `related` finding and still passed. This environment has no `DEEPSEEK_API_KEY`, so the concurrent judge and the paraphrased diffs were not re-measured here. The code change targets a p50 under 3 seconds by overlapping those calls and failing the request at 8 seconds instead of waiting on a 45 second client timeout. Until that is measured again, the honest LLM latency is the table above: about **6.6 s p50** and **8.6 s p95** per diff.
+Cue suite, both judges: recall **1.00** (6/6), false positives **0/6**. Paraphrase suite: LLM **0.67** (2/3, the miss is `cost_missing_price_helper`), offline **0.00** (0/3), false positives **0/1**. Wall time for 16 LLM cases was 25.0 s and 24.5 s.
+
+Bring-your-own ingest with no token: Kludex/starlette#3148 took 22.1 s (9 decisions, about 27 GitHub requests). #3436 took 22.1 s (15 decisions) and merged into the same graph (23 decisions, the existing correction kept). Guard on that graph was about 1.3–1.7 s. An override under the LLM judge flipped warn to pass on the next run.
+
+The per-case offline table higher up is an earlier local run on this tree. A later offline re-run, after the tie-break and scope-note filter, still shows cue recall 1.00 (6/6), paraphrase recall 0.00 (0/3), overall recall 0.67 (6/9), false positives 0/7, and graph-step p50 7.22 ms. Latency in that table is not the af5932a table in this section. The LLM numbers above were not re-measured in this environment.
 
 ## Quickstart
 
@@ -162,7 +167,7 @@ Open http://localhost:8000 and press the risky cost sample. `make web-build` is 
 
 `FALKORDB_URL` accepts `redis://` and `rediss://` (and the `falkor://` / `falkors://` aliases). The scheme is not rewritten. FalkorDB Cloud's free tier should use `redis://`; `rediss://` has been observed to hang there.
 
-`GITHUB_TOKEN` is optional and should be set for any ingest past a tiny pull request. A repository walk is about three GitHub requests per PR, plus review comments, issue comments, and one public-events lookup per person, capped at 150 requests. Unauthenticated GitHub allows 60 requests per hour.
+`GITHUB_TOKEN` is effectively required. One bring-your-own PR used about 27 unauthenticated GitHub requests (reviews, comments, and a public-events lookup on top of the PR walk), and two PRs nearly exhaust the unauthenticated 60-per-hour limit. The client budget is 150 requests once a token is set.
 
 Rebuild the seed from the public GitHub API (cached under `data/cache/`, which is gitignored):
 
@@ -233,7 +238,7 @@ The `Dockerfile` builds the Vite UI and serves it from FastAPI. Railway reads `P
 | `DEEPSEEK_API_KEY` | Optional. Without it, extraction and judging stay on the explicit offline path. |
 | `LLM_BASE_URL` | Default `https://api.deepseek.com`. Any OpenAI-compatible `/chat/completions` URL. |
 | `LLM_MODEL` | Default `deepseek-chat`. DeepSeek also documents `deepseek-flash` and `deepseek-v4-pro`. |
-| `GITHUB_TOKEN` | Optional, raises the GitHub REST rate limit for bring-your-own-PR ingest. |
+| `GITHUB_TOKEN` | Effectively required. Unauthenticated ingest spends about 25–30 GitHub requests per PR. |
 | `GUARD_JUDGE` | `auto` (default), `offline`, or `llm`. |
 | `STALE_INACTIVE_DAYS` | Default 90. |
 
@@ -264,7 +269,7 @@ Bring-your-own-PR: `POST /api/ingest` with `{pr_url}`. The job fetches the PR's 
 - The offline judge is a deterministic polarity check (null/unknown versus 0, default-deny versus allow, drain/backup versus "stop polling" / "disable backup"). It misses the paraphrased diffs in `eval/cases.yaml` (recall 0/3). Use the LLM judge when a key is configured. Eval exits non-zero if that judge falls back or times out.
 - PageRank on a nine-PR graph is real but thin. Several files have a single human author, so the card shows a bus factor of 1.
 - #14548 is referenced, not closed, by the cost PRs. R1 therefore reports a live premise, not a "claimed fixed but still open" warning. That matches the text.
-- Ingest of an arbitrary popular PR can hit GitHub's unauthenticated rate limit. Set `GITHUB_TOKEN`.
+- Ingest without `GITHUB_TOKEN` is not practical past a single small PR. Set the token.
 - The Action does not block merges (check conclusion is `neutral`). It comments. You can require the check in branch protection if you want it to gate.
 - `POST /api/feedback` on the HTTP API is not authenticated. The GitHub Action is the surface that checks write access before it calls that endpoint. Do not expose the API on the public internet without a network boundary.
 - No hosted demo is included in this repository. `docker compose up --build` is the path a judge can run. LLM latency after the concurrent-judge change has not been re-measured; the 6.6 s figure is the sequential run.
