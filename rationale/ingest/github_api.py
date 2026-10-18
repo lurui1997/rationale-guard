@@ -30,7 +30,8 @@ class GitHubClient:
         self.token = token if token is not None else github_token()
         self.max_requests = max_requests
         self.requests = 0
-        self._client = httpx.Client(timeout=30.0, headers=self._headers())
+        # GitHub answers 301/302 for renamed repos and for pull/*.diff. Follow them.
+        self._client = httpx.Client(timeout=30.0, headers=self._headers(), follow_redirects=True)
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -97,9 +98,20 @@ class GitHubClient:
         data = self.get_json(f"/repos/{repo}/pulls/{number}/reviews", {"per_page": 50})
         return data if isinstance(data, list) else []
 
+    def review_comments(self, repo: str, number: int) -> list[dict[str, Any]]:
+        data = self.get_json(f"/repos/{repo}/pulls/{number}/comments", {"per_page": 30})
+        return data if isinstance(data, list) else []
+
     def issue_comments(self, repo: str, number: int) -> list[dict[str, Any]]:
         data = self.get_json(f"/repos/{repo}/issues/{number}/comments", {"per_page": 30})
         return data if isinstance(data, list) else []
+
+    def public_events(self, login: str) -> list[dict[str, Any]]:
+        data = self.get_json(f"/users/{login}/events/public", {"per_page": 5})
+        return data if isinstance(data, list) else []
+
+    def pull_diff(self, repo: str, number: int) -> str:
+        return fetch_pr_diff(repo, number)
 
     def commits_for_path(self, repo: str, path: str) -> list[dict[str, Any]]:
         encoded = quote(path, safe="/")
@@ -119,3 +131,17 @@ class GitHubClient:
             raise GitHubError(f"Raw file HTTP {response.status_code} for {path}")
         cache.write_text(response.text)
         return response.text
+
+
+def fetch_pr_diff(repo: str, number: int, timeout: float = 30) -> str:
+    """Download a public PR diff. ``*.diff`` URLs redirect; an unfollowed 302 is an empty pass."""
+    url = f"https://github.com/{repo}/pull/{number}.diff"
+    headers = {"User-Agent": "rationale-guard", "Accept": "text/plain"}
+    with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers) as client:
+        response = client.get(url)
+    if response.status_code != 200:
+        raise GitHubError(f"Could not fetch PR diff: HTTP {response.status_code}")
+    text = response.text or ""
+    if not text.strip():
+        raise GitHubError(f"PR diff for {repo}#{number} was empty after redirects")
+    return text
