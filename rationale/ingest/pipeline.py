@@ -106,6 +106,66 @@ def _keywords(config: dict[str, Any]) -> list[str]:
     return words
 
 
+def _comment_texts(client: GitHubClient, repo: str, number: int, review_lines: list[str], include_reviews: bool = True) -> str:
+    """Review bodies plus line comments and issue comments. Bots are skipped. Failures are logged."""
+    bots = load_bots()
+    chunks = [line for line in review_lines if line.strip()]
+    if include_reviews:
+        try:
+            for comment in client.review_comments(repo, number):
+                login = ((comment.get("user") or {}).get("login"))
+                if is_bot(login, (comment.get("user") or {}).get("type"), bots):
+                    continue
+                text = (comment.get("body") or "").strip()
+                if text:
+                    chunks.append(text)
+        except GitHubError as exc:
+            logger.warning("No review comments for #%s: %s", number, exc)
+    try:
+        for comment in client.issue_comments(repo, number):
+            login = ((comment.get("user") or {}).get("login"))
+            if is_bot(login, (comment.get("user") or {}).get("type"), bots):
+                continue
+            text = (comment.get("body") or "").strip()
+            if text:
+                chunks.append(text)
+    except GitHubError as exc:
+        logger.warning("No issue comments for #%s: %s", number, exc)
+    return "\n\n".join(chunks)[:12000]
+
+
+def _discussion(client: GitHubClient, repo: str, number: int, review_lines: list[str]) -> str:
+    return _comment_texts(client, repo, number, review_lines)
+
+
+def _refresh_activity(client: GitHubClient, persons: dict[str, dict[str, Any]]) -> None:
+    """Recent public events are evidence. A miss stays 'unknown' and must not be read as inactive."""
+    checked = 0
+    for person in persons.values():
+        if person.get("is_bot"):
+            person["activity_evidence"] = "unknown"
+            continue
+        if checked >= 12:
+            person.setdefault("activity_evidence", "unknown")
+            continue
+        checked += 1
+        try:
+            events = client.public_events(person["login"])
+        except GitHubError as exc:
+            logger.warning("No public events for %s: %s", person["login"], exc)
+            person["activity_evidence"] = "unknown"
+            continue
+        person["activity_evidence"] = "github"
+        newest = 0
+        for event in events:
+            newest = max(newest, int(epoch(event.get("created_at")) or 0))
+        if newest:
+            person["last_active"] = max(int(person.get("last_active") or 0), newest)
+        elif not events:
+            # GitHub only lists recent public events. An empty page is evidence, not a guess.
+            person["last_active"] = 0
+
+
 def _emit(progress: Progress | None, **payload: Any) -> None:
     if progress:
         progress(payload)
@@ -169,6 +229,10 @@ def snapshot_from_pr(
     try:
         _emit(progress, step="fetch_pr", detail=f"{repo}#{number}")
         payload = client.pull(repo, number)
+        canonical = (((payload.get("base") or {}).get("repo") or {}).get("full_name")) or repo
+        if canonical and canonical.lower() != repo.lower():
+            logger.info("PR URL %s resolved to %s after redirect", repo, canonical)
+            repo = canonical
         if payload.get("private"):
             raise GitHubError("Private repositories are not ingested")
         files = client.pull_files(repo, number)[:20]
@@ -282,10 +346,14 @@ def _assemble(
             "supersedes": [ref.__dict__ for ref in parsed.supersedes],
         }
         prs.append(record)
+        review_bodies: list[str] = []
         try:
             for review in client.reviews(repo, number):
                 login = ((review.get("user") or {}).get("login"))
                 remember_person(login, (review.get("user") or {}).get("type"), epoch(review.get("submitted_at")))
+                body_text = (review.get("body") or "").strip()
+                if body_text and not is_bot(login, (review.get("user") or {}).get("type"), bots):
+                    review_bodies.append(body_text)
                 if login:
                     reviews.append(
                         {
@@ -298,6 +366,7 @@ def _assemble(
                     )
         except GitHubError as exc:
             logger.warning("No reviews for #%s: %s", number, exc)
+        discussion = _discussion(client, repo, number, review_bodies)
         artifact = {
             "kind": "pr",
             "source_id": f"pr:{number}",
@@ -311,6 +380,22 @@ def _assemble(
         }
         for decision in extract_decisions(artifact, mode=mode):
             decisions.append(decision)
+        if discussion.strip():
+            for decision in extract_decisions(
+                {
+                    "kind": "pr",
+                    "source_id": f"pr:{number}",
+                    "state": record["state"],
+                    "area": area,
+                    "title": record["title"],
+                    "url": record["url"],
+                    "text": discussion,
+                    "structured": False,
+                    "section": "comments",
+                },
+                mode=mode,
+            ):
+                decisions.append(decision)
 
     # Only seeded issues are fetched. Other numbers stay as edges to stubs so a
     # public ingest stays inside the GitHub request budget.
@@ -357,6 +442,25 @@ def _assemble(
             }
             for decision in extract_decisions(artifact, mode=mode):
                 decisions.append(decision)
+        issue_notes = _comment_texts(client, repo, number, review_lines=[], include_reviews=False)
+        if issue_notes.strip():
+            for decision in extract_decisions(
+                {
+                    "kind": "issue",
+                    "source_id": f"issue:{number}",
+                    "state": (payload.get("state") or "open").upper(),
+                    "area": area,
+                    "title": payload.get("title") or "",
+                    "url": payload.get("html_url"),
+                    "text": issue_notes,
+                    "structured": False,
+                    "section": "comments",
+                },
+                mode=mode,
+            ):
+                decisions.append(decision)
+
+    _refresh_activity(client, persons)
 
     doc_nodes = []
     for area, path in docs:

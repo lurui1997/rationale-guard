@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.out:
         Path(args.out).write_text(json.dumps(snapshot, indent=2))
     graph = graph_name_for_repo(snapshot["repo"])
-    counts = load_snapshot(Store(), snapshot, graph, reset=True)
+    counts = load_snapshot(Store(), snapshot, graph, reset=False)
     print(json.dumps({"graph": graph, "decisions": len(snapshot["decisions"]), **counts}))
 
 

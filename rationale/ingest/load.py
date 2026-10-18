@@ -148,17 +148,7 @@ def load_snapshot(store: Store, snapshot: dict[str, Any], graph: str, reset: boo
         counts["nodes"] += 1
 
     for person in snapshot.get("persons") or []:
-        upsert(
-            store,
-            graph,
-            "Person",
-            f"person:{person['login']}",
-            {
-                "login": person["login"],
-                "is_bot": bool(person.get("is_bot")),
-                "last_active": int(person.get("last_active") or 0),
-            },
-        )
+        _upsert_person(store, graph, person)
         counts["nodes"] += 1
 
     pr_numbers = {int(pr["number"]) for pr in snapshot.get("prs") or []}
@@ -322,12 +312,10 @@ def load_snapshot(store: Store, snapshot: dict[str, Any], graph: str, reset: boo
 
     for decision in snapshot.get("decisions") or []:
         node_id = decision["id"]
-        symbols = list(decision.get("symbols") or []) or     _symbols_for_decision(snapshot, decision)
-        # symbols are attached on the decision below
-        upsert(
+        symbols = list(decision.get("symbols") or []) or _symbols_for_decision(snapshot, decision)
+        _upsert_decision(
             store,
             graph,
-            "Decision",
             node_id,
             {
                 "summary": (decision.get("summary") or "")[:200],
@@ -426,8 +414,86 @@ def load_snapshot(store: Store, snapshot: dict[str, Any], graph: str, reset: boo
         relate(store, graph, f"commit:{source}", "REVERTS", f"commit:{target}", {"evidence": revert.get("subject") or ""})
         counts["edges"] += 1
 
+    _write_collaboration(store, graph)
+    counts["writes"] = counts["nodes"]
+    counts["nodes"] = store.ping(graph)
     logger.info("Loaded graph %s (%s)", graph, counts)
     return counts
+
+
+def _upsert_person(store: Store, graph: str, person: dict[str, Any]) -> None:
+    """Keep the newer activity timestamp. GitHub evidence is not replaced by a later snapshot that lacks it."""
+    login = person["login"]
+    node_id = f"person:{login}"
+    incoming_last = int(person.get("last_active") or 0)
+    incoming_evidence = person.get("activity_evidence") or "unknown"
+    rows, _trace = store.query(
+        graph,
+        """
+        MATCH (p:Person {id: $id})
+        RETURN p.last_active AS last_active, p.activity_evidence AS activity_evidence
+        """,
+        {"id": node_id},
+    )
+    if rows:
+        existing_last = int(rows[0].get("last_active") or 0)
+        existing_evidence = rows[0].get("activity_evidence") or "unknown"
+        incoming_last = max(existing_last, incoming_last)
+        if incoming_evidence != "github" and existing_evidence == "github":
+            incoming_evidence = "github"
+    upsert(
+        store,
+        graph,
+        "Person",
+        node_id,
+        {
+            "login": login,
+            "is_bot": bool(person.get("is_bot")),
+            "last_active": incoming_last,
+            "activity_evidence": incoming_evidence,
+        },
+    )
+
+
+def _upsert_decision(store: Store, graph: str, node_id: str, props: dict[str, Any]) -> None:
+    """MERGE a decision without wiping an override or a higher wrong_count already stored on the node."""
+    keys = [key for key in props if key not in {"status", "wrong_count"} and PROP.fullmatch(key) and _clean(props[key]) is not None]
+    params: dict[str, Any] = {
+        "id": node_id,
+        "status": props.get("status") or "accepted",
+        "wrong_count": int(props.get("wrong_count") or 0),
+    }
+    assignments = ["n.id = $id"]
+    for key in keys:
+        params[key] = _clean(props[key])
+        assignments.append(f"n.{key} = ${key}")
+    cypher = (
+        "MERGE (n:Decision {id: $id}) SET "
+        + ", ".join(assignments)
+        + """
+        WITH n
+        OPTIONAL MATCH (c:Correction {kind: 'override'})-[:ABOUT]->(n)
+        SET n.status = CASE WHEN c IS NOT NULL THEN 'superseded' ELSE $status END,
+            n.wrong_count = CASE
+                WHEN coalesce(n.wrong_count, 0) > $wrong_count THEN n.wrong_count
+                ELSE $wrong_count
+            END
+        """
+    )
+    store.query(graph, cypher, params)
+
+
+def _write_collaboration(store: Store, graph: str) -> None:
+    """Collaboration edges are written at load time so guard and who_knows stay read-only."""
+    store.query(
+        graph,
+        """
+        MATCH (p1:Person)-[:EDITED]->(f:File)<-[:EDITED]-(p2:Person)
+        WHERE p1.is_bot = false AND p2.is_bot = false AND p1.id < p2.id
+        MERGE (p1)-[:COLLABORATED]->(p2)
+        MERGE (p2)-[:COLLABORATED]->(p1)
+        """,
+    )
 
 
 def _symbols_for_decision(snapshot: dict[str, Any], decision: dict[str, Any]) -> list[str]:

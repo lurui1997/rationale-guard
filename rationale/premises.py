@@ -84,9 +84,22 @@ RULES: list[dict[str, Any]] = [
         "severity": "info",
         "cypher": """
             MATCH (d:Decision)-[:DERIVED_FROM]->(src)<-[:AUTHORED]-(p:Person {is_bot: false})
-            WHERE d.id IN $ids AND p.last_active > 0 AND p.last_active < $cutoff
+            WHERE d.id IN $ids AND p.activity_evidence = 'github'
+              AND (coalesce(p.last_active, 0) = 0 OR p.last_active < $cutoff)
             RETURN d.id AS decision_id, src.id AS left_id, p.id AS right_id,
-                   p.login + ' last active ' + toString(p.last_active) AS detail
+                   p.login + ' has no public GitHub activity inside the window (' + toString(p.last_active) + ')' AS detail
+        """,
+    },
+    {
+        "id": "R6_activity_unknown",
+        "severity": "info",
+        "cypher": """
+            MATCH (d:Decision)-[:DERIVED_FROM]->(src)<-[:AUTHORED]-(p:Person {is_bot: false})
+            WHERE d.id IN $ids
+              AND coalesce(p.activity_evidence, 'unknown') <> 'github'
+              AND p.last_active > 0 AND p.last_active < $cutoff
+            RETURN d.id AS decision_id, src.id AS left_id, p.id AS right_id,
+                   'activity unknown for ' + p.login + '; ingested PRs are not proof they left' AS detail
         """,
     },
     {
@@ -96,6 +109,8 @@ RULES: list[dict[str, Any]] = [
             MATCH (d:Decision)-[:DERIVED_FROM]->(src)<-[:AUTHORED]-(p:Person {is_bot: false})
             MATCH (src)-[:IN_AREA]->(a:Area)<-[:IN_AREA]-(later:PR)<-[:AUTHORED]-(other:Person {is_bot: false})
             WHERE d.id IN $ids AND other.id <> p.id
+              AND p.activity_evidence = 'github'
+              AND (coalesce(p.last_active, 0) = 0 OR p.last_active < $cutoff)
               AND coalesce(later.merged_at, later.created_at, 0) > coalesce(p.last_active, 0)
             WITH d, p, a, src, max(coalesce(later.merged_at, later.created_at, 0)) AS latest_other
             MATCH (p)-[:AUTHORED]->(own:PR)-[:IN_AREA]->(a)
