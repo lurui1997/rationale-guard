@@ -98,13 +98,17 @@ Ingest goes from the public GitHub API, through rule-based edges (`Fixes` gives 
 3. **A judge labels them.** The DeepSeek judge gets the verbatim quote and the hunk, and has to return `contradicts`, `related`, or `unrelated`. Unrelated candidates are dropped. The model never retrieves anything. It only labels what the graph returned. If you asked for the LLM judge and the call fails, the request fails. There's no silent fallback.
 4. **The card shows its evidence:** the verbatim quote and source link, premise status and rule IDs, rejected alternatives, who to ask, the reasoning-path subgraph, and the executed Cypher.
 
-A README typo touches no file that carries a decision, so it passes.
+A README typo touches no file that carries a decision, so it passes:
+
+![Benign diff passes](./img/guard-pass.png)
 
 The same thing works on a repository we didn't seed. I pasted [Kludex/starlette#3651](https://github.com/Kludex/starlette/pull/3651), and the app built a Starlette graph from public data. Then I pasted a diff that turns `if self.max_age is not None:` back into `if self.max_age:`. Guard warned on the decision *"Treat `max_age=0` as an explicit value rather than as unset in `SessionMiddleware`"* and quoted the PR:
 
 > `SessionMiddleware` checked `if self.max_age`, so `max_age=0` was treated like `None` and the cookie became a browser-session cookie. It now checks `is not None`, matching how `max_age` is passed to `unsign`.
 
 It recommended asking `@Kludex` first, by PageRank.
+
+![Starlette max_age reversal warns](./img/guard-starlette-warn.png)
 
 ## Memory from corrections
 
@@ -126,7 +130,11 @@ Because corrections live in FalkorDB, they survive restarts and re-ingests. Re-i
 
 ## MCP and the GitHub Action: the agent acts
 
-The point is for the *agent* to ask the graph before it edits. `python3 -m rationale.mcp_server` (stdio) and `POST /mcp` (JSON-RPC over HTTP) expose five tools: `guard_diff`, `why`, `who_knows`, `check_premises`, `record_feedback`. A call to the live server returns the same decision, the same premise (`linked issue #14548 is still open`), and the same expert, in a form an agent can act on, for example by keeping unknown as `null`.
+The point is for the *agent* to ask the graph before it edits. `python3 -m rationale.mcp_server` (stdio) and `POST /mcp` (JSON-RPC over HTTP) expose five tools: `guard_diff`, `why`, `who_knows`, `check_premises`, `record_feedback`. Here is a real call to the live server:
+
+![MCP guard_diff over HTTP](./img/mcp-guard-diff.png)
+
+It returns the same decision, the same premise (`linked issue #14548 is still open`), and the same expert, in a form an agent can act on, for example by keeping unknown as `null`.
 
 For humans, `action/post_guard.py` runs as a GitHub Action. It upserts one sticky comment marked `<!-- rationale-guard -->` and posts a neutral check run on the PR head SHA. `/rationale ack|override|wrong <reason>` is accepted only from commenters with write access.
 
