@@ -8,6 +8,8 @@ It is a submission for WeMakeDevs x FalkorDB **Graph Hacks: Context for AI Agent
 
 Live: [https://rationale-guard-production.up.railway.app](https://rationale-guard-production.up.railway.app)
 
+Write-up: [My coding agent almost undid a decision it never knew existed](docs/BLOG.md)
+
 ![Guard warns on a cost-null-to-zero diff](docs/img/guard.gif)
 
 - Press a sample button. "Treat unknown adapter cost as zero" is the diff that should warn.

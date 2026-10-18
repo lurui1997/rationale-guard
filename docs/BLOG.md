@@ -1,78 +1,114 @@
 # My coding agent almost undid a decision it never knew existed
 
+Rationale Guard: a FalkorDB graph that tells you which past decision a diff breaks, whether its premise still holds, and who to ask.
+
+![Rationale Guard cover](./img/cover.png)
+
+Live: https://rationale-guard-production.up.railway.app
+Code (MIT): https://github.com/lurui1997/rationale-guard
+Demo video: https://github.com/lurui1997/rationale-guard/releases/download/demo-video-v1/rationale-guard-demo.mp4 ([release](https://github.com/lurui1997/rationale-guard/releases/tag/demo-video-v1))
+
+*Built for WeMakeDevs × FalkorDB **Graph Hacks: Context for AI Agents**. Primary track: Agents That Act on Connected Data (also Company Brain and Agent Memory).*
+
+## The one-line diff
+
 The pull request looked harmless. In `packages/adapter-utils/src/billing.ts` someone, or something, changed one expression:
 
-```ts
-const price = usage.cost ?? null;
-const price = usage.cost ?? 0; // treat unknown as zero
+```diff
+-  const price = usage.cost ?? null;
++  const price = usage.cost ?? 0; // treat unknown as zero
 ```
 
-A reviewer skimming the diff sees a null made concrete. A coding agent sees a type error going away. Neither is looking at issue [#14548](https://github.com/paperclipai/paperclip/issues/14548) on [paperclipai/paperclip](https://github.com/paperclipai/paperclip), which is still open, and which says the cost API returns `costCents: 0` with no way to tell "the cost is zero" from "we do not know the cost." They are also not looking at PR [#14991](https://github.com/paperclipai/paperclip/pull/14991), merged on 7 October 2026, whose body says, verbatim:
+A reviewer skimming the diff sees a null turned into a real value. A coding agent sees a type error go away. Neither of them is looking at issue [#14548](https://github.com/paperclipai/paperclip/issues/14548) on [paperclipai/paperclip](https://github.com/paperclipai/paperclip). That issue is still open, and it says the cost API returns `costCents: 0` with no way to tell "the cost is zero" from "we don't know the cost." They are also not looking at PR [#14991](https://github.com/paperclipai/paperclip/pull/14991), which says, verbatim:
+
+> Classify managed custom Responses routes as API usage with their routed biller; retain unknown prices instead of treating them as ChatGPT subscriptions or direct OpenAI.
+
+and, in a sibling decision from the same area:
 
 > Preserve explicit zero prices and missing prices as distinct states, including later unpriced Gemini usage.
 
-That sentence is the decision. The one-line diff contradicts it. The premise is still live, because #14548 was referenced, not closed. The person to ask is the human who actually edits those files.
+Those sentences are the decision, and the one-line diff contradicts them. The premise is still live, because #14548 was *referenced* and never closed. The person to ask is the human who actually edits those files.
 
-Rationale Guard is the small system that says this before the change merges. This post is about why that sentence has to come from a graph.
+Agents, and developers in their first week, undo decisions they never saw. Rationale Guard tells you before the change merges.
 
-## The failure mode is not "the model forgot"
+![Guard result on the cost diff: contradiction, verbatim quote, premise, who to ask](./img/guard-warn.png)
 
-Agents are good at the file in front of them. They are bad at organizational memory, and the usual fix — embed the docs, retrieve the nearest paragraphs — does not match the question a diff asks.
+## Why a graph and not RAG
 
-A diff has paths and lines. It does not have a question. "Is this like the cost discussion?" is the wrong question. The right question is structural:
+A diff has paths and lines. It doesn't contain a question. Embedding "unknown cost" and fetching the nearest paragraphs will turn up #14548, along with a dozen unrelated pricing comments. It won't tell you that #14991 links the issue with `Refs`, not `Fixes`, that the issue is `OPEN` today, or that someone overrode the decision last week. That's all state on edges, and similarity search doesn't see edges.
 
-Which past decision was implemented by a change to this file? Does that decision still rest on an open issue, a pending ADR, a dependency that never merged, or a commit that was reverted? What did the authors refuse to do instead? Who still works here?
+The question a diff actually asks is about structure:
 
-Those are edges with state on them. An embedding of "unknown cost" will surface #14548 and also a dozen unrelated pricing comments. It will not tell you that the link from #14991 is `Refs`, not `Fixes`, and that the issue state is `OPEN` today. It will not drop the decision after someone writes "billing now normalizes upstream" and have the next run say so. State changes. Similarity does not.
+> Which past decision was implemented by a change to *this file*? Does that decision still rest on an open issue, a pending ADR, an unmerged dependency, a reverted commit? What did the authors refuse to do instead? Who still works here?
 
-## What we stored
-
-FalkorDB holds one graph per repository. The paperclip seed is `rationale__paperclipai__paperclip`. The node types are the ones the guard actually walks: `Decision`, `PR`, `Issue`, `File`, `Person`, `Premise`, `Alternative`, `Correction`, plus `Commit`, `Doc`, and `Area` so the path has somewhere to land.
-
-Structural edges come from rules, not from a model. A closing keyword creates `FIXES`, and a checklist line that merely contains the words "Fixes #" does not. `Refs #14548` creates `REFERENCES`. A squash subject ending in `(#14991)` is how history walk finds the PR. Bot logins ending in `[bot]` stay in the graph for audit and stay out of "who to ask."
-
-Only the decision text is extracted, and the quote has to be a substring of the artifact. The seed in the repository was produced by the project's own ingester in offline mode, because that mode is deterministic and the quotes can be checked by eye. The same function calls an OpenAI-compatible endpoint when `DEEPSEEK_API_KEY` is set. DeepSeek gets `response_format: {type: json_object}` — not `json_schema` — and list fields that come back as strings are normalized. If the quote is not in the source, the decision is dropped. The model name sent on the wire is `LLM_MODEL`, default `deepseek-chat`, never an internal tag like `offline`.
-
-Two quotes the offline scorer kept, both verbatim:
-
-- From #14991: "Preserve explicit zero prices and missing prices as distinct states, including later unpriced Gemini usage."
-- From the MCP ADR: "they do not provide a single default-deny policy engine…" and "Designs must make default deny, approval wait, denied direct call… obvious." The ADR status line is still "pending SecurityEngineer and UXDesigner validation gates."
-
-PR #15614, "stop polling five empty delivery queues," is closed and not merged. Its decision is stored with status `rejected` because that is what the GitHub payload says, not because someone drew an edge by hand.
-
-## The guard is a query, then a label
-
-For a diff, the graph step is a handful of parameterized queries. The first one is the whole product:
+In Rationale Guard that question is a set of parameterized multi-hop Cypher queries. This is the first one, taken directly from `rationale/guard.py`:
 
 ```cypher
 MATCH (f:File) WHERE f.path IN $paths
 MATCH (pr:PR)-[:TOUCHES]->(f)
 MATCH (d:Decision)-[:DERIVED_FROM]->(pr)
 WHERE coalesce(d.status, 'accepted') <> 'superseded'
-RETURN d.id, d.source_quote, d.summary, f.path, pr.number
+  AND coalesce(d.extractor, '') <> 'correction'
+RETURN d.id AS decision_id, d.source_quote AS quote, d.source_url AS source_url,
+       f.path AS path, pr.number AS via_number, 'pr-file' AS hop
 ```
 
-Further hops follow `FIXES` and `REFERENCES` into issues, and `ADDS` into docs, so a decision written in an ADR still meets a diff that touches a file from the PR that added the ADR. A symbol hop covers the case where the path is new but the identifiers are old.
+Sibling queries go one hop further. They follow `File ← TOUCHES ← PR → FIXES/REFERENCES → Issue ← DERIVED_FROM ← Decision` and `PR → ADDS → Doc ← DERIVED_FROM ← Decision`, so a decision written down in an ADR still catches a diff to a file that came in with the PR that added the ADR. A symbol hop covers renamed or new paths that use old identifiers.
 
-Then the premise rules run, still in Cypher. R1 has two shapes, and the difference matters. If a merged PR says `Fixes #N` and the issue is open, the "we fixed it" premise is stale. If it only says `Refs #N` and the issue is open, the premise holds: the reason for the decision is still sitting there. R3 reads the ADR status. R4 follows `SUPERSEDES`. R7 follows `REVERTS`. R6 calls an author inactive only when GitHub public events say so. A quiet slice of ingested pull requests is `unknown`, not proof they left.
-
-Rejected alternatives are `Alternative` nodes with `REJECTED_FOR`. Experts are not a leaderboard page. We materialize `COLLABORATED` between humans who edit the same file, then:
+Premise checks are Cypher too. Here is rule R1 from `rationale/premises.py`, the one that fired on the cost diff:
 
 ```cypher
-CALL algo.pageRank('Person', 'COLLABORATED')
-YIELD node, score
-RETURN node.login, score
+MATCH (d:Decision)-[:DERIVED_FROM]->(pr:PR)-[r:REFERENCES]->(i:Issue {state: 'OPEN'})
+WHERE d.id IN $ids
+RETURN d.id AS decision_id, pr.id AS left_id, i.id AS right_id,
+       'linked issue #' + toString(i.number) + ' is still open' AS detail
 ```
 
-Betweenness is called the same way. The names returned are intersected with the people who actually edit the files in the diff. On the cost files that is `@devinfoley`, and the card says the bus factor is 1, because it is.
+The difference between the two variants matters. If a merged PR says `Fixes #N` and the issue is still open, the "we fixed it" premise is stale, and that's a warning. If it only says `Refs #N`, the reason for the decision is still open, so the premise holds. Other rules read ADR status (R3), follow `SUPERSEDES` (R4), follow `REVERTS` (R7), and mark an author inactive only when GitHub's public events say so (R6).
 
-Only after that list exists does a judge run. The offline judge is a polarity check: a quote that keeps unknown and zero distinct, plus a diff that writes `?? 0`, is a contradiction. The LLM judge receives the quote and the hunk and must return `contradicts`, `related`, or `unrelated`. Unrelated candidates are dropped. If you asked for the LLM and the call fails, the request fails. The offline judge is not a silent backup. Eval with `--judge llm` exits non-zero if any case did not get an LLM verdict. That rule exists because a prototype of this idea once cached "the graph has no decision" while the database was down, and then served the cached miss after the database came back.
+The UI shows every query it ran. Open **Cypher** on a finding and you get the exact statements and their timings. The reasoning-path chips are the nodes those queries returned.
 
-On the twelve labelled diffs in `eval/cases.yaml`, the offline judge's recall is 6/6 and the false-positive count is 0/6. The graph step's median is about 6 milliseconds. The 1 second budget is not close.
+![Executed Cypher and reasoning path](./img/guard-cypher.png)
 
-## Memory is a node, or it is a slogan
+## What FalkorDB does here
 
-The brief asks for an agent that remembers what it learns. A 24 hour cache is not that. Rationale Guard writes a `Correction`:
+The graph isn't a place to park JSON. One FalkorDB instance gives us:
+
+- **One graph per repository.** The seed is `rationale__paperclipai__paperclip`. Paste a public PR URL and the app builds `rationale__Kludex__starlette` next to it, so the two companies' memories never mix.
+- **Fast parameterized multi-hop Cypher.** The candidate, premise, alternative, correction and people queries run as five concurrent calls. The graph step is about 220 ms warm on the hosted Railway deployment.
+- **Graph algorithms as procedures.** We materialize `COLLABORATED` edges between people who edit the same files, then rank them in the database:
+
+```cypher
+CALL algo.pageRank('Person', 'COLLABORATED') YIELD node, score
+RETURN node.login AS login, score
+```
+
+`algo.betweenness` is called the same way. The ranked list is intersected with the people who actually edited the files in the diff. On the cost files that's `@devinfoley`, and the card reports a bus factor of 1, because it is 1.
+
+- **Indexes plus fulltext.** There are range indexes on every node id, and `db.idx.fulltext.createNodeIndex('Decision', 'summary', 'rationale', 'source_quote')` backs the secondary "why" lookups.
+
+![Architecture](./img/architecture.png)
+
+Ingest goes from the public GitHub API, through rule-based edges (`Fixes` gives `FIXES`, `Refs` gives `REFERENCES`, and `[bot]` accounts are kept for audit but left out of "who to ask"), then a DeepSeek extractor (or an explicit offline extractor). A decision is kept **only if its quote is a substring of the source artifact**.
+
+## The guard flow
+
+1. **Paste a diff or a public PR URL.** For a URL, the app fetches up to 20 changed files and walks their history from the last 18 months, capped at 30 PRs. It extracts decisions, merges them into that repo's graph, and guards the PR's own diff.
+2. **The graph selects candidates.** These are the Cypher hops above, followed by the premise rules, rejected `Alternative` nodes (`REJECTED_FOR`), and experts.
+3. **A judge labels them.** The DeepSeek judge gets the verbatim quote and the hunk, and has to return `contradicts`, `related`, or `unrelated`. Unrelated candidates are dropped. The model never retrieves anything. It only labels what the graph returned. If you asked for the LLM judge and the call fails, the request fails. There's no silent fallback.
+4. **The card shows its evidence:** the verbatim quote and source link, premise status and rule IDs, rejected alternatives, who to ask, the reasoning-path subgraph, and the executed Cypher.
+
+A README typo touches no file that carries a decision, so it passes.
+
+The same thing works on a repository we didn't seed. I pasted [Kludex/starlette#3651](https://github.com/Kludex/starlette/pull/3651), and the app built a Starlette graph from public data. Then I pasted a diff that turns `if self.max_age is not None:` back into `if self.max_age:`. Guard warned on the decision *"Treat `max_age=0` as an explicit value rather than as unset in `SessionMiddleware`"* and quoted the PR:
+
+> `SessionMiddleware` checked `if self.max_age`, so `max_age=0` was treated like `None` and the cookie became a browser-session cookie. It now checks `is not None`, matching how `max_age` is passed to `unsign`.
+
+It recommended asking `@Kludex` first, by PageRank.
+
+## Memory from corrections
+
+"The agent remembers" shouldn't mean a 24-hour cache. In Rationale Guard, every correction is a node:
 
 ```cypher
 MERGE (c:Correction {id: $id})
@@ -80,27 +116,58 @@ SET c.kind = $kind, c.text = $text, c.by = $by, c.at = $at
 MERGE (c)-[:ABOUT]->(d:Decision {id: $decision})
 ```
 
-`ack` leaves the finding in place and marks it acknowledged. `wrong` multiplies that decision's match score by 0.25 so it falls out of the top five when there is anything else to show. `override` sets the old decision to `superseded` and creates a new decision whose summary is the reason you typed, with `SUPERSEDES` pointing at the old one. The next guard run does not warn on the old quote. It says it learned the override. The correction survives a process restart because it is in FalkorDB, on a volume if you used Compose.
+- **ack** keeps the finding and records who acknowledged it and why. The next run shows "Learned from @… : ack".
+- **wrong** multiplies that decision's match score by 0.25, so it drops below better candidates.
+- **override** marks the old decision `superseded` and writes a new `Decision` that `SUPERSEDES` it, using the reason you typed. The next guard run doesn't warn on the old quote, and it says it learned the override.
 
-You can send the same correction from the web buttons, from `record_feedback` on MCP, or by commenting `/rationale override: billing now normalizes upstream` on a PR where the GitHub Action is installed. The Action updates one comment, the one that contains `<!-- rationale-guard -->`, and posts a neutral check. It does not fail the build unless you choose to require the check. It also never posts to a repository you do not own. The paperclip data is read-only.
+Because corrections live in FalkorDB, they survive restarts and re-ingests. Re-ingesting a repo merges new history and never deletes `Correction` nodes.
 
-## What FalkorDB was for
+![A correction is remembered and shown on the rerun](./img/guard-learned.png)
 
-We did not need a graph database to store JSON. We needed one place that can do all of the following without a second system:
+## MCP and the GitHub Action: the agent acts
 
-- a separate graph per repository, so a judge can paste their own PR URL and not land in someone else's company brain
-- multi-hop matches with parameters, fast enough to run on every diff
-- a fulltext index for the secondary "why" question, next to the structural index
-- PageRank and betweenness as procedures, not as a library we would have to keep in sync with the edges
+The point is for the *agent* to ask the graph before it edits. `python3 -m rationale.mcp_server` (stdio) and `POST /mcp` (JSON-RPC over HTTP) expose five tools: `guard_diff`, `why`, `who_knows`, `check_premises`, `record_feedback`. A call to the live server returns the same decision, the same premise (`linked issue #14548 is still open`), and the same expert, in a form an agent can act on, for example by keeping unknown as `null`.
 
-`FALKORDB_URL` takes both `redis://` and `rediss://`. The free Cloud tier, in our experience, answers plaintext and hangs on TLS, so the client does not "helpfully" upgrade the scheme. Locally the same URL points at `docker compose` or at `redis-server --loadmodule falkordb.so`. The app's health check is a real `count(n)`, and a connection error is a 503, not an empty answer.
+For humans, `action/post_guard.py` runs as a GitHub Action. It upserts one sticky comment marked `<!-- rationale-guard -->` and posts a neutral check run on the PR head SHA. `/rationale ack|override|wrong <reason>` is accepted only from commenters with write access.
 
-## What this does not do
+## Honest numbers
 
-It does not know your company. The seed is three areas of one public repo, built from nine pull requests, one open issue, and one ADR. The offline extractor keeps sentences with decision-shaped cues; it will miss a decision that was only spoken, and it will keep a sentence that is a constraint but not a capital-D Decision. The LLM path is stricter about being a choice among alternatives, and it still depends on the quote being real.
+These are from the live deployment (Railway, FalkorDB, DeepSeek judge) on the 16 labelled diffs in `eval/cases.yaml`:
 
-It does not block the merge. It comments. An agent that calls `guard_diff` from MCP can refuse to write `?? 0` itself, which is the action, but the GitHub check is neutral on purpose.
+| Metric | Result |
+|---|---|
+| Recall on contradicting diffs | **0.89** (8/9) |
+| False positives on benign diffs | **0** (0/7) |
+| Cue-word contradictions | 6/6 |
+| Paraphrased contradictions | 2/3 |
+| Guard end to end | ~1.7 s |
+| Graph step (warm) | ~220 ms |
 
-It will not invent a rejected alternative to make the demo prettier. #15614 is in the graph because it was closed without merging and its body is explicit. Where a sentence says "instead of" or "alternatives considered… both were rejected," that sentence is the alternative. Where the text does not say it, there is no edge.
+## Limitations
 
-The interesting failure is still the one-line diff. The agent was not wrong about JavaScript. It was wrong about a decision it was never given. The graph is how you give it to the agent without trusting the agent to remember.
+- **Small eval.** Sixteen cases is a sanity check, not a benchmark. Paraphrased contradictions are the weak spot (2/3).
+- **Seed scope.** The seed covers three areas of one public repo (cost accounting, idle sleep, MCP access). It isn't a whole company. Anything you haven't ingested doesn't exist to the guard.
+- **Extraction misses things.** The committed seed came from the deterministic offline extractor. It misses decisions phrased without decision-like cue words. The LLM extractor is stricter, and both drop any quote that isn't verbatim.
+- **Thin PageRank.** On a graph built from a handful of PRs PageRank is real but thin, and many files have a bus factor of 1.
+- **It doesn't block merges.** The Action's check is neutral on purpose. It comments, and you can make the check required yourself.
+- **GitHub rate limits.** Ingest needs `GITHUB_TOKEN`. One PR costs roughly 25–30 GitHub API requests, and ingest on the public demo is rate-limited.
+- **Open feedback endpoint.** `POST /api/feedback` on the HTTP API is unauthenticated. The Action checks write access before calling it, so keep the API behind a network boundary in real use.
+
+## What's next
+
+- A larger, harder eval set focused on paraphrased and multi-file contradictions.
+- Incremental ingest from webhooks instead of on-demand history walks.
+- Pulling decisions from more sources (ADRs across repos, design docs, review threads) into the same per-repo graph.
+- A pre-commit hook and editor integration that call `guard_diff` locally.
+- Ways to weight time and authorship (a decision by someone still active vs. one whose authors have all left).
+
+## Links
+
+- Live app: https://rationale-guard-production.up.railway.app
+- Code (MIT): https://github.com/lurui1997/rationale-guard
+- Demo video: https://github.com/lurui1997/rationale-guard/releases/download/demo-video-v1/rationale-guard-demo.mp4
+- Release: https://github.com/lurui1997/rationale-guard/releases/tag/demo-video-v1
+- FalkorDB: https://www.falkordb.com
+- Hackathon: WeMakeDevs × FalkorDB, Graph Hacks: Context for AI Agents
+
+*The agent wasn't wrong about JavaScript. It was wrong about a decision it never saw. The graph is how you hand that decision to the agent without trusting the agent to remember it.*
