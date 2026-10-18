@@ -54,7 +54,7 @@ RETURN d.id, d.source_quote, d.summary, f.path, pr.number
 
 Further hops follow `FIXES` and `REFERENCES` into issues, and `ADDS` into docs, so a decision written in an ADR still meets a diff that touches a file from the PR that added the ADR. A symbol hop covers the case where the path is new but the identifiers are old.
 
-Then the premise rules run, still in Cypher. R1 has two shapes, and the difference matters. If a merged PR says `Fixes #N` and the issue is open, the "we fixed it" premise is stale. If it only says `Refs #N` and the issue is open, the premise holds: the reason for the decision is still sitting there. R3 reads the ADR status. R4 follows `SUPERSEDES`. R7 follows `REVERTS`. R6 looks at `Person.last_active` and at whether someone else has newer work in the area.
+Then the premise rules run, still in Cypher. R1 has two shapes, and the difference matters. If a merged PR says `Fixes #N` and the issue is open, the "we fixed it" premise is stale. If it only says `Refs #N` and the issue is open, the premise holds: the reason for the decision is still sitting there. R3 reads the ADR status. R4 follows `SUPERSEDES`. R7 follows `REVERTS`. R6 calls an author inactive only when GitHub public events say so. A quiet slice of ingested pull requests is `unknown`, not proof they left.
 
 Rejected alternatives are `Alternative` nodes with `REJECTED_FOR`. Experts are not a leaderboard page. We materialize `COLLABORATED` between humans who edit the same file, then:
 

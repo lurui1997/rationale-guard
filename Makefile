@@ -17,3 +17,6 @@ api:
 
 web:
 	npm --prefix web run dev
+
+web-build:
+	npm --prefix web ci && npm --prefix web run build

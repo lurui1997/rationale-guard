@@ -31,9 +31,9 @@ def _mini() -> dict:
             {"slug": "idle-sleep", "name": "Idle"},
         ],
         "persons": [
-            {"login": "alice", "is_bot": False, "last_active": now},
-            {"login": "oldtimer", "is_bot": False, "last_active": now - 200 * 86400},
-            {"login": "dependabot[bot]", "is_bot": True, "last_active": now},
+            {"login": "alice", "is_bot": False, "last_active": now, "activity_evidence": "github"},
+            {"login": "oldtimer", "is_bot": False, "last_active": now - 200 * 86400, "activity_evidence": "github"},
+            {"login": "dependabot[bot]", "is_bot": True, "last_active": now, "activity_evidence": "unknown"},
         ],
         "issues": [
             {"number": 1, "title": "unknown cost", "state": "OPEN", "created_at": now, "author": "alice", "url": "https://example.test/issues/1", "body": "open", "area": "costs"},
@@ -234,7 +234,10 @@ diff --git a/src/billing.ts b/src/billing.ts
     assert any(item["decision_id"] == "decision:r1" and item["verdict"] == "contradicts" for item in warned["findings"])
     finding = next(item for item in warned["findings"] if item["decision_id"] == "decision:r1")
     assert finding["quote"]
-    assert finding["cypher_trace"] or warned["cypher_trace"]
+    assert warned["paths"] == ["src/billing.ts"]
+    assert finding["cypher_trace"]
+    assert len(finding["cypher_trace"]) < len(warned["cypher_trace"])
+    assert any(step.get("name") == "decision_via_pr_file" for step in finding["cypher_trace"])
     assert finding["subgraph"]["nodes"]
     assert finding["rejected_alternatives"]
     assert any(person["login"] == "alice" for person in finding["ask"])

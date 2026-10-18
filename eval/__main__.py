@@ -34,9 +34,8 @@ def main(argv: list[str] | None = None) -> int:
     graph = args.graph or graph_name_for_repo(snapshot["repo"])
     store = Store()
     if not args.skip_load:
-        load_snapshot(store, snapshot, graph, reset=False)
-        if store.ping(graph) == 0:
-            load_snapshot(store, snapshot, graph, reset=True)
+        # The benchmark is the committed seed, not corrections left in a local graph.
+        load_snapshot(store, snapshot, graph, reset=True)
     rows = []
     fallbacks = []
     errors = []
@@ -59,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "id": case["id"],
                 "label": case["label"],
+                "suite": case.get("suite") or "cue",
                 "hit": hit,
                 "status": report["status"],
                 "findings": len(report["findings"]),
@@ -89,6 +89,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"cases: {len(rows)}")
     print(f"recall: {recall:.2f} ({len(true_positives)}/{len(positives)})")
     print(f"false_positives: {len(false_positives)}/{len(negatives)} ({false_positive_rate:.2f})")
+    for suite in ("cue", "paraphrase"):
+        suite_rows = [row for row in rows if row.get("suite") == suite and not row.get("error")]
+        if not suite_rows:
+            continue
+        suite_pos = [row for row in suite_rows if row["label"] == "violates"]
+        suite_neg = [row for row in suite_rows if row["label"] == "benign"]
+        suite_tp = [row for row in suite_pos if row["hit"]]
+        suite_fp = [row for row in suite_neg if row["hit"]]
+        suite_recall = (len(suite_tp) / len(suite_pos)) if suite_pos else 0.0
+        print(
+            f"suite {suite}: recall {suite_recall:.2f} ({len(suite_tp)}/{len(suite_pos)}) "
+            f"false_positives {len(suite_fp)}/{len(suite_neg)}"
+        )
     if graph_times:
         print(f"graph_ms_p50: {_percentile(graph_times, 0.5)}")
         print(f"total_ms_p50: {_percentile(total_times, 0.5)}")

@@ -9,3 +9,5 @@ web/node_modules/
 web/dist/
 *.log
 .DS_Store
+*.egg-info/
+*.egg-info
