@@ -1,0 +1,27 @@
+name: rationale-guard
+
+# Runs only when the repository variable RATIONALE_API_URL is set, so forks and
+# this repo's CI stay quiet until you point the action at a deployment you own.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  guard:
+    if: ${{ vars.RATIONALE_API_URL != '' && (github.event_name != 'issue_comment' || startsWith(github.event.comment.body, '/rationale')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Post the sticky guard comment
+        env:
+          RATIONALE_API_URL: ${{ vars.RATIONALE_API_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python action/post_guard.py

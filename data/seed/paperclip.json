@@ -1,0 +1,3679 @@
+{
+  "repo": "paperclipai/paperclip",
+  "generated_at": "2026-10-18T08:15:40.327393+00:00",
+  "extractor": "offline",
+  "areas": [
+    {
+      "slug": "costs",
+      "name": "Cost accounting"
+    },
+    {
+      "slug": "idle-sleep",
+      "name": "Idle sleep"
+    },
+    {
+      "slug": "mcp-access",
+      "name": "MCP access"
+    }
+  ],
+  "persons": [
+    {
+      "login": "devinfoley",
+      "is_bot": false,
+      "last_active": 1791524529
+    },
+    {
+      "login": "greptile-apps[bot]",
+      "is_bot": true,
+      "last_active": 1791498252
+    },
+    {
+      "login": "superagent-security[bot]",
+      "is_bot": true,
+      "last_active": 1791497811
+    },
+    {
+      "login": "cryppadotta",
+      "is_bot": false,
+      "last_active": 1791493864
+    },
+    {
+      "login": "panoskoun",
+      "is_bot": false,
+      "last_active": 1790679081
+    }
+  ],
+  "prs": [
+    {
+      "number": 14991,
+      "title": "fix: checkpoint adapter usage and preserve unknown prices",
+      "state": "MERGED",
+      "merged_at": 1791335778,
+      "closed_at": 1791335779,
+      "created_at": 1790984491,
+      "author": "devinfoley",
+      "url": "https://github.com/paperclipai/paperclip/pull/14991",
+      "body": "## Thinking Path\n\n> - Paperclip is the open source app people use to manage AI agents for work.\n> - Run accounting starts with receipts from each agent adapter.\n> - A failed or interrupted process can lose usage. Missing provider prices can be mistaken for zero.\n> - This pull request captures usage checkpoints and preserves unknown prices through adapter completion.\n> - The server can recover usage without fabricating a free run or double-counting cumulative tokens.\n\n## Linked Issues or Issue Description\n\nRefs #14548, #12538, #212.\n\nStack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 2 of 6. Merged into `master` at `eab93fd4a077`.\n\n## What Changed\n\n- Add normalized usage checkpoints and explicit completeness to the adapter contract.\n- Persist explicitly reported zero OpenCode usage before cleanup; missing or invalid counters remain incomplete and unpriced, including unterminated output.\n- Preserve usage through failures, retries and multiple provider attempts across local adapters and ACPX.\n- Count ordinary plus cached prompt input for the session-rotation threshold, preserving the exclusive split for billing; ten real heartbeat cases cover Codex/Gemini boundaries and historical inclusive rows. Persist an explicit raw-token layout marker so upgrades cannot count old cache hits twice.\n- Separate ordinary and cached input tokens using each provider format. Preserve explicit zero prices and missing prices as distinct states, including later unpriced Gemini usage.\n- Preserve the applied Codex fast pricing tier through checkpoints and terminal results, including safer retries.\n- Classify managed custom Responses routes as API usage with their routed biller; retain unknown prices instead of treating them as ChatGPT subscriptions or direct OpenAI.\n- Prevent sandbox transports from replaying an already-streamed capped output tail into accounting.\n- Mark prompt/metadata failures before provider dispatch as no-work bootstrap failures, while uncertain dispatch failures stay incomplete.\n- Persist Codex terminal checkpoints before forwarding logs; missing or invalid usage remains incomplete and unpriced, including failed turns. Explicit zero counters remain valid.\n- Preserve incomplete Cursor usage and Codex native report completeness without inventing zero counters or borrowing missing counters from an earlier report.\n- Preserve malformed optional counters through checkpoint projection using a content-free invalid marker; real Codex/Cursor/OpenCode execution regressions preserve incomplete accounting without storing malformed text.\n- Add parser, callback and real child-process failure tests. Prevent sandbox test fixtures from silently installing a real CLI if discovery fails; isolate command-discovery tests from the separately tested callback bridge.\n\n## Verification\n\n- Run `pnpm test:run` for adapter parser, execution and failure-path suites.\n- Inspect interruption tests for the difference between partial checkpoints and a complete receipt.\n\nIntegrated-stack validation on master `c365a16e346d`: repository-wide typechecking and production build, token gates, 313 focused accounting tests, two historical migration tests, four required SIGKILL cases and four mutation sentinels pass. The thirteen accounting modules meet their individual coverage floors (aggregate 99.7% lines, 94.82% branches). CI fixture regressions pass 48 connection-card cases, both recovery release orders and the personal-connection browser workflow. Final consumer regressions pass all 28 Browser Use lifecycle, 42 email pipeline and 140 rendered issue-detail cases; local email verification used this checkout\u2019s bundled skills to avoid an unrelated ancestor skills directory. Merged-source regressions pass AI connections (107), route authorization (23), worktree cloning (63) and ACPX execution (221). Additional checks during stack preparation passed native execution (565), heartbeat admission (60), OpenCode/checkpoint/failure-path (102), Codex runner drivers (316) and Costs UI (21). Runtime/connection (644), adapter/billing (86), all Codex adapter cases (509 passed, one skipped), dashboard (106), worktree-cloning (63), CLI cost (14) and gate-harness (48) tests pass. Release workflow tests (18) and actionlint pass; frozen-install shell regressions confirm current locks proceed and stale locks fail without retries. The repository lockfile bot must land the coverage dependency refresh before frozen-install workflows run. All three accounting browser workflows pass on the current merged tree; the Storybook build and populated provider/biller smoke check passed earlier in stack preparation. Landing validation against the six intervening master changes passes all 282 targeted UI tests, 18 workflow tests and repository-wide typechecking; Storybook host validation adds 19 passing cases and 18 live HTTP checks, with UI typechecking and token gates passing. After master consolidated Cursor support, the one cancellation overlap preserves both current-budget fencing and the new manual cancellation identities. All 642 affected heartbeat/cancellation/native/Cursor tests, repository-wide typechecking and production build pass after reinstalling the updated ACPX patch. The rebuilt final tree matches that combined source. Each PR\u2019s standalone, latest-head CI status is recorded below. Latest-head CI is green. Greptile is 5/5 with no unresolved comments on this head. GitHub check metadata confirms that this completed review ran at the Apex tier.\n\n## Risks\n\nProvider output formats vary. A partial receipt remains incomplete until there is evidence that provider work finished.\n\n## Model Used\n\nOpenAI Codex, based on GPT-6, with repository inspection, code editing and test execution. The exact serving model ID and context window were not exposed to this session.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template\n- [x] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)\n- [x] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip ticket id or instance-derived details\n- [x] I have run tests locally and they pass\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation to reflect my changes\n- [x] I have considered and documented any risks above\n- [x] All Paperclip CI gates are green\n- [x] Greptile is 5/5 with no open P2s, recommendations, or follow-ups\n- [x] I will address all Greptile and reviewer comments before requesting merge\n",
+      "area": "costs",
+      "merge_sha": "eab93fd4a0774cea2f968b2c580656e642abdf33",
+      "files": [
+        {
+          "path": "packages/adapter-utils/src/usage-checkpoint.ts",
+          "change": "A",
+          "additions": 126,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapter-utils/src/usage-checkpoint.test.ts",
+          "change": "A",
+          "additions": 132,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/adapter-cost-failure-paths.test.ts",
+          "change": "A",
+          "additions": 327,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapter-utils/src/billing.ts",
+          "change": "M",
+          "additions": 22,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/heartbeat-stale-queue-invalidation.test.ts",
+          "change": "M",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapter-utils/src/billing.test.ts",
+          "change": "M",
+          "additions": 20,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/heartbeat-task-drain-admission-release.test.ts",
+          "change": "M",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapters/claude-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 93,
+          "deletions": 57
+        },
+        {
+          "path": "packages/adapters/cursor-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 110,
+          "deletions": 73
+        },
+        {
+          "path": "packages/adapters/gemini-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 124,
+          "deletions": 109
+        },
+        {
+          "path": "packages/adapters/pi-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 168,
+          "deletions": 158
+        },
+        {
+          "path": "packages/adapters/codex-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 65,
+          "deletions": 50
+        },
+        {
+          "path": "packages/adapters/opencode-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 64,
+          "deletions": 46
+        },
+        {
+          "path": "packages/adapters/opencode-local/src/server/execute.ts",
+          "change": "M",
+          "additions": 45,
+          "deletions": 13
+        },
+        {
+          "path": "packages/adapter-utils/src/acpx-engine/execute.test.ts",
+          "change": "M",
+          "additions": 118,
+          "deletions": 12
+        },
+        {
+          "path": "server/src/__tests__/heartbeat-process-recovery.test.ts",
+          "change": "M",
+          "additions": 152,
+          "deletions": 129
+        },
+        {
+          "path": "packages/adapters/codex-local/src/server/execute.ts",
+          "change": "M",
+          "additions": 36,
+          "deletions": 8
+        },
+        {
+          "path": "packages/adapters/cursor-local/src/server/execute.ts",
+          "change": "M",
+          "additions": 35,
+          "deletions": 3
+        },
+        {
+          "path": "packages/adapter-utils/src/types.ts",
+          "change": "M",
+          "additions": 34,
+          "deletions": 1
+        },
+        {
+          "path": "packages/adapters/claude-local/src/server/execute.ts",
+          "change": "M",
+          "additions": 34,
+          "deletions": 3
+        },
+        {
+          "path": "packages/adapters/pi-local/src/server/execute.ts",
+          "change": "M",
+          "additions": 25,
+          "deletions": 8
+        },
+        {
+          "path": "packages/adapter-utils/src/acpx-engine/execute.ts",
+          "change": "M",
+          "additions": 22,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapters/gemini-local/src/server/execute.ts",
+          "change": "M",
+          "additions": 19,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/adapters/process/execute.ts",
+          "change": "M",
+          "additions": 18,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/run-vitest-stable.mjs",
+          "change": "M",
+          "additions": 16,
+          "deletions": 3
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 14548,
+          "kind": "mention",
+          "evidence": "Refs #14548, #12538, #212.",
+          "via": "mention"
+        },
+        {
+          "number": 12538,
+          "kind": "mention",
+          "evidence": "Refs #14548, #12538, #212.",
+          "via": "mention"
+        },
+        {
+          "number": 212,
+          "kind": "mention",
+          "evidence": "Refs #14548, #12538, #212.",
+          "via": "mention"
+        },
+        {
+          "number": 14989,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 2 of 6. Merged into `master` at `eab93fd4a077`.",
+          "via": "mention"
+        },
+        {
+          "number": 14991,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 2 of 6. Merged into `master` at `eab93fd4a077`.",
+          "via": "mention"
+        },
+        {
+          "number": 14994,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 2 of 6. Merged into `master` at `eab93fd4a077`.",
+          "via": "mention"
+        },
+        {
+          "number": 14997,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 2 of 6. Merged into `master` at `eab93fd4a077`.",
+          "via": "mention"
+        },
+        {
+          "number": 14999,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 2 of 6. Merged into `master` at `eab93fd4a077`.",
+          "via": "mention"
+        },
+        {
+          "number": 15001,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 2 of 6. Merged into `master` at `eab93fd4a077`.",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 14994,
+      "title": "fix: scope quota reports to authorized subscription accounts",
+      "state": "MERGED",
+      "merged_at": 1791336038,
+      "closed_at": 1791336038,
+      "created_at": 1790984627,
+      "author": "devinfoley",
+      "url": "https://github.com/paperclipai/paperclip/pull/14994",
+      "body": "## Thinking Path\n\n> - Paperclip is the open source app people use to manage AI agents for work.\n> - The Costs API reports subscription quota for connected provider accounts.\n> - Host-local authentication and unsupported CLI flags can show the wrong account or fail a quota read.\n> - This pull request scopes quota reads to authorized company accounts and preserves refreshed credentials.\n> - Quota results identify the account and cannot consume a rotated refresh token without retaining its replacement.\n\n## Linked Issues or Issue Description\n\nRefs #14360. This provides the account-scoped quota API used by #14997.\n\nStack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 3 of 6. Merged into `master` at `892b0b3606f0`.\n\n## What Changed\n\n- Resolve account quotas through authorized company grants and separate cache entries by credential revision.\n- Fix Codex approval arguments and sanitize provider probe failures.\n- Fsync the full recovery-directory ancestry before token exchange; fail closed across process restarts and concurrent sibling writes when any required ancestor cannot be flushed. Follow real target ancestry and all symlink containers; revalidate complete directory/link identities on cached reuse.\n- Persist rotated credentials across database failures and prevent stale runtime cleanup from overwriting a newer credential.\n- Retain verified sign-in credentials across two lock-acquisition timeouts behind a quota refresh; preserve session ownership and idempotency checks on retry.\n- Serialize manual account tests and adoption probes with quota refresh through credential write-back.\n- Keep automatic quota/recovery/runtime token rotations separate from the grant timestamp that fences explicit reconnect and access changes. Verify both a contended reconnect and all three refresh paths.\n- Preserve AI session epochs during automatic refresh and reject replaced credential references during preparation.\n- Recover a matching pending replacement before returning a newer credential to a delayed poll; a newer vault version alone cannot prove its token is usable.\n- Defer runtime preparation on recovery-write/commit failures and report outer probe lock timeouts as retryable busy states. Keep the shared quota fields optional for existing consumers. Include safe subscription-panel refresh behavior; the account-aware dashboard follows in #14997.\n\n## Verification\n\n- Run the company quota, AI connection, Codex quota and credential recovery tests with `pnpm test:run`.\n- All 107 AI connection cases and 15 directory-durability cases pass, along with the 37 manual probe route cases. The delayed-poll and fresh-process failed-flush regressions fail before the fixes and pass afterward.\n\nIntegrated-stack validation on master `c365a16e346d`: repository-wide typechecking and production build, token gates, 313 focused accounting tests, two historical migration tests, four required SIGKILL cases and four mutation sentinels pass. The thirteen accounting modules meet their individual coverage floors (aggregate 99.7% lines, 94.82% branches). CI fixture regressions pass 48 connection-card cases, both recovery release orders and the personal-connection browser workflow. Final consumer regressions pass all 28 Browser Use lifecycle, 42 email pipeline and 140 rendered issue-detail cases; local email verification used this checkout\u2019s bundled skills to avoid an unrelated ancestor skills directory. Merged-source regressions pass AI connections (107), route authorization (23), worktree cloning (63) and ACPX execution (221). Additional checks during stack preparation passed native execution (565), heartbeat admission (60), OpenCode/checkpoint/failure-path (102), Codex runner drivers (316) and Costs UI (21). Runtime/connection (644), adapter/billing (86), all Codex adapter cases (509 passed, one skipped), dashboard (106), worktree-cloning (63), CLI cost (14) and gate-harness (48) tests pass. Release workflow tests (18) and actionlint pass; frozen-install shell regressions confirm current locks proceed and stale locks fail without retries. The repository lockfile bot must land the coverage dependency refresh before frozen-install workflows run. All three accounting browser workflows pass on the current merged tree; the Storybook build and populated provider/biller smoke check passed earlier in stack preparation. Landing validation against the six intervening master changes passes all 282 targeted UI tests, 18 workflow tests and repository-wide typechecking; Storybook host validation adds 19 passing cases and 18 live HTTP checks, with UI typechecking and token gates passing. After master consolidated Cursor support, the one cancellation overlap preserves both current-budget fencing and the new manual cancellation identities. All 642 affected heartbeat/cancellation/native/Cursor tests, repository-wide typechecking and production build pass after reinstalling the updated ACPX patch. The rebuilt final tree matches that combined source. Each PR\u2019s standalone, latest-head CI status is recorded below. Latest-head CI is green. Greptile is 5/5 with no unresolved comments on this head. GitHub check metadata confirms that this completed review ran at the Apex tier.\n\n## Risks\n\nPOSIX storage paths require readable, flushable ancestors; permission failures block credential exchange until corrected. Provider quota endpoints and CLI output can change. Credential recovery includes file and database failure paths; it must not expose credentials or cross company boundaries.\n\n## Model Used\n\nOpenAI Codex, based on GPT-6, with repository inspection, code editing and test execution. The exact serving model ID and context window were not exposed to this session.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template\n- [x] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)\n- [x] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip ticket id or instance-derived details\n- [x] I have run tests locally and they pass\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation to reflect my changes\n- [x] I have considered and documented any risks above\n- [x] All Paperclip CI gates are green\n- [x] Greptile is 5/5 with no open P2s, recommendations, or follow-ups\n- [x] I will address all Greptile and reviewer comments before requesting merge\n",
+      "area": "costs",
+      "merge_sha": "892b0b3606f066dd7344d6397daf25c8b52f598b",
+      "files": [
+        {
+          "path": "packages/adapter-utils/src/usage-checkpoint.ts",
+          "change": "A",
+          "additions": 126,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapter-utils/src/usage-checkpoint.test.ts",
+          "change": "A",
+          "additions": 132,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/adapter-cost-failure-paths.test.ts",
+          "change": "A",
+          "additions": 327,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapter-utils/src/billing.ts",
+          "change": "M",
+          "additions": 22,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/routes/costs.ts",
+          "change": "M",
+          "additions": 2,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/__tests__/heartbeat-stale-queue-invalidation.test.ts",
+          "change": "M",
+          "additions": 36,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapter-utils/src/billing.test.ts",
+          "change": "M",
+          "additions": 20,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/heartbeat-task-drain-admission-release.test.ts",
+          "change": "M",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapters/claude-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 93,
+          "deletions": 57
+        },
+        {
+          "path": "packages/adapters/codex-local/src/server/quota.ts",
+          "change": "M",
+          "additions": 85,
+          "deletions": 24
+        },
+        {
+          "path": "packages/adapters/cursor-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 110,
+          "deletions": 73
+        },
+        {
+          "path": "packages/adapters/gemini-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 124,
+          "deletions": 109
+        },
+        {
+          "path": "packages/adapters/pi-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 168,
+          "deletions": 158
+        },
+        {
+          "path": "server/src/services/ai-connection-runtime.ts",
+          "change": "M",
+          "additions": 127,
+          "deletions": 74
+        },
+        {
+          "path": "server/src/services/ai-connections.ts",
+          "change": "M",
+          "additions": 256,
+          "deletions": 44
+        },
+        {
+          "path": "server/src/services/quota-windows.ts",
+          "change": "M",
+          "additions": 141,
+          "deletions": 3
+        },
+        {
+          "path": "server/src/lib/durable-directory.ts",
+          "change": "A",
+          "additions": 71,
+          "deletions": 0
+        },
+        {
+          "path": "packages/adapters/codex-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 65,
+          "deletions": 50
+        },
+        {
+          "path": "packages/adapters/opencode-local/src/server/parse.ts",
+          "change": "M",
+          "additions": 64,
+          "deletions": 46
+        },
+        {
+          "path": "server/src/services/quota-credential-recovery.ts",
+          "change": "A",
+          "additions": 54,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/AI-CONNECTIONS.md",
+          "change": "M",
+          "additions": 48,
+          "deletions": 3
+        },
+        {
+          "path": "packages/adapters/opencode-local/src/server/execute.ts",
+          "change": "M",
+          "additions": 45,
+          "deletions": 13
+        },
+        {
+          "path": "packages/adapter-utils/src/acpx-engine/execute.test.ts",
+          "change": "M",
+          "additions": 118,
+          "deletions": 12
+        },
+        {
+          "path": "packages/adapters/codex-local/src/server/quota-spawn-error.test.ts",
+          "change": "M",
+          "additions": 182,
+          "deletions": 3
+        },
+        {
+          "path": "server/src/__tests__/ai-connections.test.ts",
+          "change": "M",
+          "additions": 644,
+          "deletions": 2
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 14360,
+          "kind": "mention",
+          "evidence": "Refs #14360. This provides the account-scoped quota API used by #14997.",
+          "via": "mention"
+        },
+        {
+          "number": 14997,
+          "kind": "mention",
+          "evidence": "Refs #14360. This provides the account-scoped quota API used by #14997.",
+          "via": "mention"
+        },
+        {
+          "number": 14989,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 3 of 6. Merged into `master` at `892b0b3606f0`.",
+          "via": "mention"
+        },
+        {
+          "number": 14991,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 3 of 6. Merged into `master` at `892b0b3606f0`.",
+          "via": "mention"
+        },
+        {
+          "number": 14994,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 3 of 6. Merged into `master` at `892b0b3606f0`.",
+          "via": "mention"
+        },
+        {
+          "number": 14999,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 3 of 6. Merged into `master` at `892b0b3606f0`.",
+          "via": "mention"
+        },
+        {
+          "number": 15001,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 3 of 6. Merged into `master` at `892b0b3606f0`.",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 14997,
+      "title": "fix: make accounting durable and synchronize cost reporting",
+      "state": "MERGED",
+      "merged_at": 1791350809,
+      "closed_at": 1791350809,
+      "created_at": 1790985200,
+      "author": "devinfoley",
+      "url": "https://github.com/paperclipai/paperclip/pull/14997",
+      "body": "## Thinking Path\n\n> - Paperclip is the open source app people use to manage AI agents for work.\n> - Costs and budgets must agree on one durable company ledger.\n> - Interrupted runs, duplicate receipts, rounded amounts and concurrent budget updates can lose or misstate spend.\n> - This pull request makes accounting durable and exact and updates the dashboard with its API contract.\n> - Retries preserve one charge, unknown prices remain visible, and budget decisions use consistent totals.\n\n## Linked Issues or Issue Description\n\nRefs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.\n\nStack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 4 of 6. Merged into `master` at `799e4d556f5c`.\n\n## What Changed\n\n- Capture fsynced usage receipts, verify directory ancestry before provider dispatch, replay after failures and acknowledge only after atomic ledger settlement. Preserve a complete streamed receipt when the bounded final output loses it, without hiding additional usage or charges.\n- Use exact decimal cents, idempotency identities, immutable run attribution and explicit reported/estimated/unpriced states.\n- Estimate supported Codex models with pricing provenance. Preserve pending or unpriced usage when a reliable total is unavailable.\n- Make reservations, incidents, projections, cancellation delivery and hire-approval lock ordering consistent under concurrency.\n- Add user attribution, read-only snapshot reporting, invoice reconciliation, provider report import and recovery/inspection APIs while preserving existing Finance ingestion and access rules.\n- Include the performance fixes in the initial implementation: avoid reporting write locks, coalesce recovery and limit policy scans to the relevant scope.\n- Add one generated, replay-safe migration and historical upgrade, pricing, budget and heartbeat tests. Additional fault/concurrency gates follow in #15001.\n- Ship the final shared Costs page with its API: agent/user/project tables, estimate labels, safe stale refreshes and currency-aware Finance cards.\n- Keep Recent financial events on Finance only, compact the agreed labels/layout and collapse advanced budget settings. No new accounting-health or charge-entry panels.\n- Show exact estimated run charges in agent/issue views and safely format invalid historical currency codes.\n- Require fresh complete native per-run usage for the terminal turn; stale attachment snapshots and partial reports remain pending. Save terminal receipts before committing the native result, including when replaying durable events.\n- Accumulate native OpenCode turns across retries and controller restarts from durable run events, preserving cumulative Codex semantics, exact price sums, replay safety and incomplete evidence.\n- Retain a successful Claude retry\u2019s known model breakdown when the rejected resume reports complete zero spend and zero tokens.\n- Recheck current budgets and manual pauses before native recovery reuses a reservation; compare exact cents for daily heartbeat cost caps.\n- Settle Browser Use charges, Finance entries, projections and cumulative checkpoints under the company accounting lock; preserve rollback and idempotent retry on failure.\n- Keep task and subtree token totals consistent with historical and current cache layouts, and compare exact decimal spend during email admission.\n- Preserve historical Pi/OpenCode exclusive input counts while normalizing legacy Codex inclusive counts.\n- Restore saved zero budgets when a positive limit is saved, preserve disabled positive policies when their amounts change, retain known partially unpriced user spend, and invalidate all company reporting periods on live cost events.\n- Take the attributed issue lock before the run lock during native settlement and recheck attribution, with concurrent PostgreSQL regressions.\n- Keep overlapping invoice evidence out of Finance totals; retain unique charge links and require review for ambiguous matches or changed prices.\n- Serialize agent deletion before child locks and preserve existing charged-agent deletion restrictions.\n- Serialize company deletion with accounting writers using a foreign-key-compatible lock; remove Finance/cost/budget dependencies before runs and approvals. Preserve native result writes and atomic rollback when existing native-artifact constraints prevent deletion.\n- Persist a sticky incomplete-accounting marker when checkpoint capture or completion fails, await it before surfacing rejection, retry it before heartbeat failure finalization, and prevent replay, replacement or finalizer readiness from settling an older receipt. Fence stale recorders by company, run and source identity.\n- Preserve empty-turn task recovery when an explicitly complete zero-usage receipt carries the completeness flag. Keep partial, malformed and nonzero usage conservative. Do not let a zero-cost empty attempt suppress the estimate for later paid Codex usage.\n- Carry explicit runner usage completeness into native accounting. Accumulate ACPX per-turn reports across retries and controller recovery, preserving missing evidence and valid zero usage.\n- Retain the upstream 0307 migration snapshot when adding accounting migration 0312.\n- Keep interrupted AgentCore receipts pending while usage metadata is missing or token counts remain lower bounds; reject conservative ceiling/unknown/pending markers before certifying run deltas.\n- Accept fractional cents in shared status-card daily/update and skill-test cost summary schemas while preserving nonnegative finite values and integer token counters.\n- Emit managed Claude and AWS AgentCore per-run receipts from a durable session baseline. Preserve it across retries/recovery, rotate it only for a new run, reject incomplete or regressing totals, and retain AgentCore estimate labels.\n- Restrict external provider billing imports to active company owners/admins or instance/local operators. Require a dedicated company secret explicitly designated for the matching billing provider and account before resolving its value.\n- Generate accounting migration 0312 after the newly landed MCP migration; retain the proven replay-safe accounting SQL and verify schema drift.\n- Load routine route test dependencies after mock registration to avoid a reproduced importActual race; keep the existing authorization and telemetry assertions.\n\n## Verification\n\n- `pnpm test:run` exercises the database, receipt, native execution, reporting, budget and migration suites.\n- The integrated branch passed historical migration, user attribution, performance and AI connection tests. The routing and Costs page regressions are included with the production changes; latest Costs/live-update suites pass all 83 cases. The final coverage gate is in #15001.\n- Full-stack browser tests passed for real run settlement, budget stop/resume and retained Finance API ingestion.\n- A PostgreSQL regression reproduces a complete zero-cost resume followed by a paid retry whose spool write fails before complete(); the run stays pending and the reservation held. Additional tests cover validation/completion failure, replay, replacement, stale controllers and transient database fence failures, including actual heartbeat failure finalization.\n- The empty-turn regression fails in both prepared modes through the real translator; the zero-then-paid pricing regression fails both with and without restart before the fixes. All 601 native executor tests and166 runtime/driver tests pass afterward, with repository-wide typecheck and build. Existing Linux Runner and browser CI passed the preceding completeness revision.\n- ACPX regressions fail before the fixes: six incomplete-receipt cases, eight multi-turn/recovery cases, and seven runner translation/driver assertions. All 593 native executor tests pass after the fixes; complete Codex ACPX totals remain eligible for an exact token-price estimate. Repository-wide typecheck and production build pass.\n- All 15 Rust",
+      "area": "costs",
+      "merge_sha": "799e4d556f5c1bc17b398147c7e0abff91446de0",
+      "files": [
+        {
+          "path": "packages/db/src/schema/accounting.ts",
+          "change": "A",
+          "additions": 121,
+          "deletions": 0
+        },
+        {
+          "path": "packages/shared/src/accounting.ts",
+          "change": "A",
+          "additions": 115,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/routes/costs.ts",
+          "change": "M",
+          "additions": 82,
+          "deletions": 75
+        },
+        {
+          "path": "server/src/services/accounting-integrity.ts",
+          "change": "A",
+          "additions": 121,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/billing-reconciliation.ts",
+          "change": "A",
+          "additions": 167,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/costs.ts",
+          "change": "M",
+          "additions": 247,
+          "deletions": 79
+        },
+        {
+          "path": "server/src/services/provider-billing-import.ts",
+          "change": "A",
+          "additions": 376,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/run-cost-accounting.ts",
+          "change": "A",
+          "additions": 200,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/usage-receipts.ts",
+          "change": "A",
+          "additions": 311,
+          "deletions": 0
+        },
+        {
+          "path": "ui/src/pages/Costs.tsx",
+          "change": "M",
+          "additions": 246,
+          "deletions": 229
+        },
+        {
+          "path": "ui/src/components/CostByUserTable.tsx",
+          "change": "A",
+          "additions": 56,
+          "deletions": 0
+        },
+        {
+          "path": "packages/shared/src/types/cost.ts",
+          "change": "M",
+          "additions": 46,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/accounting-transaction.ts",
+          "change": "A",
+          "additions": 40,
+          "deletions": 0
+        },
+        {
+          "path": "ui/src/pages/Costs.test.tsx",
+          "change": "M",
+          "additions": 236,
+          "deletions": 3
+        },
+        {
+          "path": "ui/src/components/CostEstimateLabel.tsx",
+          "change": "A",
+          "additions": 20,
+          "deletions": 0
+        },
+        {
+          "path": "packages/db/src/schema/cost_events.ts",
+          "change": "M",
+          "additions": 13,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/services/cost-date-range.ts",
+          "change": "A",
+          "additions": 12,
+          "deletions": 0
+        },
+        {
+          "path": "packages/shared/src/validators/cost.ts",
+          "change": "M",
+          "additions": 9,
+          "deletions": 5
+        },
+        {
+          "path": "ui/src/api/costs.ts",
+          "change": "M",
+          "additions": 5,
+          "deletions": 0
+        },
+        {
+          "path": "ui/src/pages/Costs.production.tsx",
+          "change": "D",
+          "additions": 0,
+          "deletions": 1104
+        },
+        {
+          "path": "server/src/__tests__/costs-service.test.ts",
+          "change": "M",
+          "additions": 29,
+          "deletions": 18
+        },
+        {
+          "path": "packages/db/src/migrations/0312_easy_eternity.sql",
+          "change": "A",
+          "additions": 232,
+          "deletions": 0
+        },
+        {
+          "path": "packages/db/src/migrations/meta/0312_snapshot.json",
+          "change": "A",
+          "additions": 54406,
+          "deletions": 0
+        },
+        {
+          "path": "packages/paperclip-runner/runner/crates/runner-core/src/managed_provider_backend.rs",
+          "change": "M",
+          "additions": 417,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/services/budgets.ts",
+          "change": "M",
+          "additions": 336,
+          "deletions": 246
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 14548,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.",
+          "via": "mention"
+        },
+        {
+          "number": 5598,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.",
+          "via": "mention"
+        },
+        {
+          "number": 12538,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.",
+          "via": "mention"
+        },
+        {
+          "number": 212,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.",
+          "via": "mention"
+        },
+        {
+          "number": 11419,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.",
+          "via": "mention"
+        },
+        {
+          "number": 9433,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.",
+          "via": "mention"
+        },
+        {
+          "number": 15125,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598, #12538, #212, #11419, #9433. Includes the performance work previously reviewed in #15125.",
+          "via": "mention"
+        },
+        {
+          "number": 14989,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 4 of 6. Merged into `master` at `799e4d556f5c`.",
+          "via": "mention"
+        },
+        {
+          "number": 14991,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 4 of 6. Merged into `master` at `799e4d556f5c`.",
+          "via": "mention"
+        },
+        {
+          "number": 14994,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 4 of 6. Merged into `master` at `799e4d556f5c`.",
+          "via": "mention"
+        },
+        {
+          "number": 14997,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 4 of 6. Merged into `master` at `799e4d556f5c`.",
+          "via": "mention"
+        },
+        {
+          "number": 14999,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 4 of 6. Merged into `master` at `799e4d556f5c`.",
+          "via": "mention"
+        },
+        {
+          "number": 15001,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 4 of 6. Merged into `master` at `799e4d556f5c`.",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 15001,
+      "title": "fix: enforce accounting coverage and recovery regression gates",
+      "state": "MERGED",
+      "merged_at": 1791383185,
+      "closed_at": 1791383185,
+      "created_at": 1790985621,
+      "author": "devinfoley",
+      "url": "https://github.com/paperclipai/paperclip/pull/15001",
+      "body": "## Thinking Path\n\n> - Paperclip is the open source app people use to manage AI agents for work.\n> - Durable accounting needs repeatable regression gates and inspectable operational guidance.\n> - Broad suite success alone does not prove that crash recovery or critical financial invariants are tested.\n> - This pull request adds per-module coverage floors, mutation sentinels and an accounting operations guide.\n> - CI detects weakened accounting tests and operators can inspect failures without guessing.\n\n## Linked Issues or Issue Description\n\nRefs #14548, #5598. Completes the verification for #14997 and #14999.\n\nStack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 6 of 6. Review against `fix/costs-dashboard-accounting`. Merge authorized; landing in dependency order.\n\n## What Changed\n\n- Add and typecheck focused PostgreSQL tests for crash recovery, concurrency, receipt replay, reporting and operator recovery, plus exact-money and provider-import tests.\n- Require saved passing results for all four SIGKILL cases and both historical migration cases; skipped or missing cases fail. The historical runtime fixture restores bigint and verifies an exact lifetime total beyond JavaScript\u2019s safe integer range.\n- Require each of thirteen accounting service modules to meet its own coverage thresholds.\n- Kill deliberate mutations of receipt deduplication, company isolation, projection conservation and budget boundaries at their specifically marked assertions; reject setup errors, timeouts and unrelated failures.\n- Retain mutation and coverage evidence on failures and upload it from the trusted CI workflow.\n- Preserve frozen-only installs for canary onboarding, optional E2E, Storybook visual and live provider evals. Execute regressions that require stale locks to fail closed without registry resolution; the existing repository bot owns lockfile refreshes.\n- Add a scale benchmark and the final implementation/operations guide, with spec links introduced alongside the guide.\n- Exercise empty-turn recovery through the real usage translator with legacy/current receipts, complete/incomplete flags, malformed metadata and counter checks. Keep Cloud-auth fixture teardown hardening in this test gate.\n- Cover ACPX completeness through the real notification translator and driver, plus additive reservation/dispatch and exact daily-spend assertions.\n- Drain Cloud-auth browser route handlers before teardown.\n- Require frozen-only installation in the accounting CI lane and gate coverage execution on successful installation, so the provider cannot come from inline registry resolution. Other CI lanes keep their existing install policy.\n- Test fractional status-card and skill-test response costs, invalid monetary values and integer token counters. Include the additive accounting OpenAPI assertions.\n- Cover missing/malformed/mismatched billing secret designations, privileged caller roles and inactive or cross-company memberships. Document dedicated billing-secret setup. Include fractional and large status-card cost regressions.\n\n## Verification\n\n- `pnpm test:accounting` checks 98% lines, 90% branches, 96% statements and 96% functions per service module, plus required migration/recovery evidence and mutation checks.\n- `node --test scripts/test-accounting-mutations.test.mjs scripts/verify-accounting-test-results.test.mjs` passed all 22 gate-harness scenarios.\n- Inspect `coverage/accounting/` for coverage and test/mutation evidence. The benchmark is an explicit operator command, not a timing threshold in CI.\n- All 30 release/workflow shard tests and actionlint pass. The new regression executes the actual accounting-lane install: a stale lock exits without any registry resolution; a current lock proceeds. It fails against the old fallback.\n\nIntegrated-stack validation on master `c365a16e346d`: repository-wide typechecking and production build, token gates, 313 focused accounting tests, two historical migration tests, four required SIGKILL cases and four mutation sentinels pass. The thirteen accounting modules meet their individual coverage floors (aggregate 99.7% lines, 94.82% branches). CI fixture regressions pass 48 connection-card cases, both recovery release orders and the personal-connection browser workflow. Final consumer regressions pass all 28 Browser Use lifecycle, 42 email pipeline and 140 rendered issue-detail cases; local email verification used this checkout\u2019s bundled skills to avoid an unrelated ancestor skills directory. Merged-source regressions pass AI connections (107), route authorization (23), worktree cloning (63) and ACPX execution (221). Additional checks during stack preparation passed native execution (565), heartbeat admission (60), OpenCode/checkpoint/failure-path (102), Codex runner drivers (316) and Costs UI (21). Runtime/connection (644), adapter/billing (86), all Codex adapter cases (509 passed, one skipped), dashboard (106), worktree-cloning (63), CLI cost (14) and gate-harness (48) tests pass. Release workflow tests (18) and actionlint pass; frozen-install shell regressions confirm current locks proceed and stale locks fail without retries. The repository lockfile bot must land the coverage dependency refresh before frozen-install workflows run. All three accounting browser workflows pass on the current merged tree; the Storybook build and populated provider/biller smoke check passed earlier in stack preparation. Landing validation against the six intervening master changes passes all 282 targeted UI tests, 18 workflow tests and repository-wide typechecking; Storybook host validation adds 19 passing cases and 18 live HTTP checks, with UI typechecking and token gates passing. After master consolidated Cursor support, the one cancellation overlap preserves both current-budget fencing and the new manual cancellation identities. All 642 affected heartbeat/cancellation/native/Cursor tests, repository-wide typechecking and production build pass after reinstalling the updated ACPX patch. The rebuilt final tree matches that combined source. Each PR\u2019s standalone, latest-head CI status is recorded below. Latest-head CI has not yet passed. Latest-head Greptile sign-off is pending. A fresh Apex review will be requested for this authorized merge.\n\n## Risks\n\nThe focused gate adds CI time and requires PostgreSQL support. Trusted workflow changes take effect when this PR reaches master. Coverage does not claim to cover every heartbeat, adapter or browser path. Frozen-install jobs stop until the repository bot refreshes pnpm-lock.yaml for the new coverage dependency; no fallback runs unreviewed dependency code in those jobs.\n\n## Model Used\n\nOpenAI Codex, based on GPT-6, with repository inspection, code editing and test execution. The exact serving model ID and context window were not exposed to this session.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template\n- [x] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)\n- [x] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip ticket id or instance-derived details\n- [x] I have run tests locally and they pass\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation to reflect my changes\n- [x] I have considered and documented any risks above\n- [ ] All Paperclip CI gates are green\n- [ ] Greptile is 5/5 with no open P2s, recommendations, or follow-ups\n- [x] I will address all Greptile and reviewe",
+      "area": "costs",
+      "merge_sha": "e9b579ba6bd2328372056563693ac4daa0ad83be",
+      "files": [
+        {
+          "path": "doc/COST-ACCOUNTING.md",
+          "change": "A",
+          "additions": 272,
+          "deletions": 0
+        },
+        {
+          "path": "server/scripts/benchmark-accounting.ts",
+          "change": "A",
+          "additions": 169,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/test-accounting-mutations.mjs",
+          "change": "A",
+          "additions": 57,
+          "deletions": 0
+        },
+        {
+          "path": "server/vitest.accounting.config.ts",
+          "change": "A",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "packages/db/src/cost-accounting-migration.test.ts",
+          "change": "A",
+          "additions": 131,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-by-user.test.ts",
+          "change": "A",
+          "additions": 162,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-completion.test.ts",
+          "change": "A",
+          "additions": 764,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-concurrency.test.ts",
+          "change": "A",
+          "additions": 113,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-crash.test.ts",
+          "change": "A",
+          "additions": 126,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-edge-cases.test.ts",
+          "change": "A",
+          "additions": 241,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-operations-edges.test.ts",
+          "change": "A",
+          "additions": 551,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-operators.test.ts",
+          "change": "A",
+          "additions": 502,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-performance.test.ts",
+          "change": "A",
+          "additions": 266,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-processes.test.ts",
+          "change": "A",
+          "additions": 110,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-reliability.test.ts",
+          "change": "A",
+          "additions": 741,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-routes.test.ts",
+          "change": "A",
+          "additions": 91,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/provider-billing-import.test.ts",
+          "change": "A",
+          "additions": 236,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/verify-accounting-test-results.mjs",
+          "change": "A",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "server/vitest.accounting-mutations.config.ts",
+          "change": "A",
+          "additions": 27,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-checkpoints.test.ts",
+          "change": "A",
+          "additions": 61,
+          "deletions": 0
+        },
+        {
+          "path": "server/tsconfig.accounting-tests.json",
+          "change": "A",
+          "additions": 19,
+          "deletions": 0
+        },
+        {
+          "path": "doc/examples/accounting-invoice.json",
+          "change": "A",
+          "additions": 15,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/verify-accounting-test-results.test.mjs",
+          "change": "A",
+          "additions": 50,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/test-accounting-mutations.test.mjs",
+          "change": "A",
+          "additions": 49,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cost-accounting-mutation-targets.test.ts",
+          "change": "A",
+          "additions": 45,
+          "deletions": 0
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 14548,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598. Completes the verification for #14997 and #14999.",
+          "via": "mention"
+        },
+        {
+          "number": 5598,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598. Completes the verification for #14997 and #14999.",
+          "via": "mention"
+        },
+        {
+          "number": 14997,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598. Completes the verification for #14997 and #14999.",
+          "via": "mention"
+        },
+        {
+          "number": 14999,
+          "kind": "mention",
+          "evidence": "Refs #14548, #5598. Completes the verification for #14997 and #14999.",
+          "via": "mention"
+        },
+        {
+          "number": 14989,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 6 of 6. Review against `fix/costs-dashboard-accounting`. Merge authorized; landing in dependency order.",
+          "via": "mention"
+        },
+        {
+          "number": 14991,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 6 of 6. Review against `fix/costs-dashboard-accounting`. Merge authorized; landing in dependency order.",
+          "via": "mention"
+        },
+        {
+          "number": 14994,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 6 of 6. Review against `fix/costs-dashboard-accounting`. Merge authorized; landing in dependency order.",
+          "via": "mention"
+        },
+        {
+          "number": 15001,
+          "kind": "mention",
+          "evidence": "Stack order: #14989 \u2192 #14991 \u2192 #14994 \u2192 #14997 \u2192 #14999 \u2192 #15001. Part 6 of 6. Review against `fix/costs-dashboard-accounting`. Merge authorized; landing in dependency order.",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 15522,
+      "title": "fix: fence accepted work and cleanup before idle sleep",
+      "state": "MERGED",
+      "merged_at": 1791473746,
+      "closed_at": 1791473746,
+      "created_at": 1791423770,
+      "author": "devinfoley",
+      "url": "https://github.com/paperclipai/paperclip/pull/15522",
+      "body": "## Thinking Path\n\n> - Paperclip is the open source app people use to manage AI agents for work.\n> - A host can stop an idle instance to reduce unused compute.\n> - Zero active runs do not prove that requests, saved work, or cleanup are complete.\n> - A client can disconnect while its request still writes, and failed cleanup can remain only in memory or on disk.\n> - This pull request holds new admission and checks accepted work, cleanup, and persisted work under an owned drain.\n> - The host gets an empty report only while those checks remain valid.\n\n## Linked Issues or Issue Description\n\nRefs #13413. That companion PR uses the same owned-hold vocabulary for runtime services. This PR covers HTTP requests, scheduler work, accounting, cleanup, and the instance work inventory. It does not include the preview gateway changes.\n\n**What existing behavior does this improve?**\n\nThe instance task-drain API reports process counters. It does not prove that a host can safely stop the instance for idle sleep.\n\n**Current behavior**\n\nA quiet run set can coexist with an unfinished request, cleanup after a completed run, future work, or a failed accounting write.\n\n**Proposed behavior**\n\nProvide a bounded owned idle hold. Block new ingress, track accepted handler promises, inspect durable and local work, and return `none` only when the same hold stays quiet through the checks. Keep normal deployment drains compatible.\n\n**Reason and benefit**\n\nHosts can identify eligible idle instances without treating a disconnect or failed cleanup write as completed work.\n\n## What Changed\n\n- Add `purpose: \"idle\"`, a bounded TTL, unique owners, and owner-checked release to task drain. Existing holds cannot be replaced by another API request.\n- Gate HTTP ingress before parsers, auth, webhooks, and MCP. Gate new WebSocket upgrades. Track async handlers in nested Express routers and error middleware until they settle, even after the response or client disconnect.\n- Count accepted live-event WebSocket authentication through settlement, even after disconnects. Count detached built-in agent, managed-home and runtime-service startup reconciliation after readiness.\n- Keep health and control mutations tracked. Count control-request authentication separately from the read-only report, including concurrent user/company/membership writes.\n- Pause new scheduler admissions during idle holds. Count work already in flight, including database backups, and reject scans whose work generation changes. Periodic backups block sleep without a host wake schedule.\n- Inspect accounting and orphan-cleanup spool directories without skipping temporary or malformed entries. Retain orphan tokens through queue splices, flush failures, and buffer overflow. Keep failed usage capture counted until its database failure fence is written.\n- Check persisted work across companies in a bounded read-only transaction. Include deferred agent-file cleanup and saved watchdogs whose watched issues are complete. Enabled plugins and unsupported retained work remain blockers.\n- Require the exact idle owner and completed startup tracking before returning an empty report. Keep reports free of tenant details.\n- Document the hosting protocol, retry behavior, conservative blockers, and the remaining external provider-stop race.\n\n## Verification\n\n- Current head: `8d9a599b732c2047b8c671d4799065d7c90a3567`, rebased on master `941a3fa991aeb97eb1ac390c65b7973b5f6de1ad`. Both heartbeat helper extractions are preserved. GitHub confirms no merge conflicts.\n- Focused heartbeat renderer/run-log, drain, control-auth, admission, route and PostgreSQL inventory checks: 234 tests passed in 10 suites after the rebase.\n- The POST task-drain contract includes the expected `409` conflict response. The 84 OpenAPI and instance-settings route tests and server typecheck passed after that final documentation fix.\n- Final accepted-upgrade/startup regression run: 104 tests passed in five suites, including success and failure after readiness or disconnect. Final server typecheck also passed.\n- `pnpm -r typecheck`: passed.\n- `pnpm build`: passed.\n- `pnpm install --frozen-lockfile` and the PR diff secret scan passed. No dependency or lockfile changes are added by this PR.\n- The prior verification covered HTTP disconnects and early responses, async error handlers, concurrent authentication writes, signed bootstrap, saved watchdogs, backup promises, orphan cleanup, spools and failed accounting fences. Those tests passed.\n- The last full local `pnpm test:run` stopped in the general-server phase with 16,658 passing tests and five skill/connector fixture failures caused by an ancestor workspace skill directory. That full local run preceded this rebase and has not been repeated for the import conflict. Full current-head CI passed: 53 successful checks and two conditional skips, with no failures.\n- All eight review findings are fixed and their threads resolved, including accepted upgrade authentication, detached startup writes and the POST conflict contract. Current-head Apex review is 5/5 with no new findings; all eight review threads remain resolved.\n- No live provider stop or production change was performed.\n\n## Risks\n\n- The hosting controller must use the owned protocol and hold external admission through its final validation and provider stop. A legacy drain cannot authorize idle sleep. During an idle hold, new requests receive 503 with `Retry-After: 1`; the host must handle queueing or retry before enabling this path.\n- This is a single-process protocol. An unexpected restart after the last validation can race an external provider stop. The host must serialize deploy/wake/sleep operations and bind the validation to the instance it stops. Multiple replicas need shared fencing.\n- Some retained state conservatively prevents sleep, including every enabled plugin. This PR does not promise that every inactive instance becomes eligible.\n- The HTTP adapter uses Express 5 router layers. Real Express tests cover nested routes, errors and disconnects. New routes must register before tracking is installed. Detached work must have durable state or explicit work tracking.\n- Unrecoverable in-memory cleanup debt keeps the instance awake until reconciliation. This change does not make such debt survive an unplanned process crash. No schema migration or provider configuration change is included.\n\n## Model Used\n\nOpenAI GPT-6 via Codex, with reasoning, repository inspection, tool use and code execution. The exact deployment variant/model ID and context window are not exposed in this session.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template\n- [x] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)\n- [x] My branch name describes the change and contains no internal Paperclip ticket id or instance-derived details\n- [x] I have run focused tests locally and they pass; the full local fixture limitation and clean full CI result are documented above\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation to reflect my changes\n- [x] I have considered and documented any risks above\n- [x] All Paperclip CI gates are green\n- [x] Greptile is 5/5 with no open P2s, recommendations, or follow-ups\n- [x] I will address all Greptile and reviewer comments before requesting merge\n",
+      "area": "idle-sleep",
+      "merge_sha": "3367b75ccce34d02f355cda1f1ed3fe0b34cf93d",
+      "files": [
+        {
+          "path": "doc/idle-sleep-safety.md",
+          "change": "A",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/middleware/idle-admission.ts",
+          "change": "A",
+          "additions": 99,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/idle-sleep-safety.ts",
+          "change": "A",
+          "additions": 125,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/idle-local-work.ts",
+          "change": "A",
+          "additions": 43,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/idle-admission.test.ts",
+          "change": "A",
+          "additions": 103,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/idle-sleep-safety.test.ts",
+          "change": "A",
+          "additions": 253,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/idle-accounting-work.test.ts",
+          "change": "A",
+          "additions": 76,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/usage-receipts.ts",
+          "change": "M",
+          "additions": 14,
+          "deletions": 6
+        },
+        {
+          "path": "server/src/__tests__/idle-local-work.test.ts",
+          "change": "A",
+          "additions": 51,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/task-admission.ts",
+          "change": "A",
+          "additions": 50,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/index.ts",
+          "change": "M",
+          "additions": 36,
+          "deletions": 27
+        },
+        {
+          "path": "server/src/routes/instance-settings.ts",
+          "change": "M",
+          "additions": 24,
+          "deletions": 3
+        },
+        {
+          "path": "server/src/__tests__/server-startup-feedback-export.test.ts",
+          "change": "M",
+          "additions": 63,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/middleware/auth.ts",
+          "change": "M",
+          "additions": 18,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/middleware/cloud-tenant-actor.test.ts",
+          "change": "M",
+          "additions": 57,
+          "deletions": 4
+        },
+        {
+          "path": "server/src/app.ts",
+          "change": "M",
+          "additions": 16,
+          "deletions": 12
+        },
+        {
+          "path": "server/src/services/environment-runtime.ts",
+          "change": "M",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/instance-settings-routes.test.ts",
+          "change": "M",
+          "additions": 51,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/realtime/live-events-ws.ts",
+          "change": "M",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/routes/openapi.ts",
+          "change": "M",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/services/heartbeat.ts",
+          "change": "M",
+          "additions": 5,
+          "deletions": 55
+        },
+        {
+          "path": "packages/shared/src/validators/instance.ts",
+          "change": "M",
+          "additions": 4,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/services/sandbox-orphan-cleanup-spool.ts",
+          "change": "M",
+          "additions": 3,
+          "deletions": 9
+        },
+        {
+          "path": "server/src/__tests__/live-events-ws.test.ts",
+          "change": "M",
+          "additions": 39,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/cloud-runtime-identity.test.ts",
+          "change": "M",
+          "additions": 33,
+          "deletions": 0
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 13413,
+          "kind": "mention",
+          "evidence": "Refs #13413. That companion PR uses the same owned-hold vocabulary for runtime services. This PR covers HTTP requests, scheduler work, accounting, cleanup, and the instance work inventory. It does not",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 15599,
+      "title": "Drain idle plugin workers before automatic sleep",
+      "state": "MERGED",
+      "merged_at": 1791489453,
+      "closed_at": 1791489453,
+      "created_at": 1791484848,
+      "author": "devinfoley",
+      "url": "https://github.com/paperclipai/paperclip/pull/15599",
+      "body": "## Thinking Path\n\n> - Paperclip runs autonomous work through agents, schedules, and plugins.\n> - Automatic idle sleep must preserve accepted work and unfinished cleanup.\n> - Every enabled plugin currently blocks sleep, including unused providers.\n> - An enabled flag or package version cannot prove that a worker is idle.\n> - This change adds a live worker drain under the existing owned hold.\n> - Idle workers can allow sleep while unknown work stays protected.\n\n## Linked Issues or Issue Description\n\nRefs #15522. Related: #15391 adds plugin readiness for agent admission; this change concerns instance sleep and does not replace that contract.\n\n**Subsystem affected**\n\nPlugin worker lifecycle and automatic idle sleep.\n\n**Problem or motivation**\n\nA workspace with no pending work cannot sleep when any plugin is enabled. Removing that check alone would lose accepted RPCs, background tasks, or cleanup after a caller timeout.\n\n**Proposed solution**\n\nRequire a live `onIdleDrain` handshake from each worker. Close admission in both processes for the exact owner and expiry. Count accepted work until completion. Continue checking durable work separately.\n\n## What Changed\n\n- Add bounded worker holds, exact-owner release, automatic expiry, and an abort signal for plugin-owned background work.\n- Count host and worker requests through their real completion receipts. Keep timed-out work counted. Check active notifications and terminal routes.\n- Accept enabled plugins only when their current workers provide matching runtime receipts. Missing workers, old SDKs, crashes, invalid replies, and unknown cleanup still prevent sleep.\n- Let unused Daytona workers opt in. Once a worker contacts the provider, it remains a blocker for that process lifetime. This restriction avoids treating its existing timeout and terminal-close behavior as a cleanup receipt.\n- Document the plugin author contract. No schema or user-facing API is added.\n\n## Verification\n\n- All hosted CI checks passed on 6ffb682894, including all server, runner, workspace, build, typecheck, and end-to-end checks. One unrelated OpenCode transport test hit a five-second timeout and passed on rerun.\n- `pnpm -r typecheck` passed.\n- `pnpm build` passed.\n- Focused Vitest: 293 tests passed across worker admission, real child-process RPC, durable idle checks, and Daytona.\n- Adjacent worker manager and duplex tests: 119 passed.\n- Real child-process tests cover late worker completion, a host write after caller timeout, stale owners, closed admission, and release.\n- SDK tests cover hook failures, busy workers, expiry without another request, and late acknowledgements after expiry.\n- The clean local build passed. The full local rerun stopped on one socket hang-up in `company-portability-routes.test.ts`; the entire file then passed 42/42 in isolation. No full local-suite pass is claimed. Final-head hosted CI is fully green, and the merged commit 3d1d5294 also passed the canonical Docker and Cloud readiness workflows.\n- Follow-up: 44 focused tests passed, including repeated owned holds without an intervening normal request. Worker status changes now invalidate an in-progress scan.\n- Apex follow-up: 13 idle tests, 119 adjacent worker tests, 71 instance-settings route tests, and server typecheck passed. A real queued notification completes its write while preparation is in flight; synchronous and async session callback failures are logged.\n- Diff whitespace and added-line secret/private-reference scans passed.\n\n## Risks\n\n- Plugins are trusted code. A hook must account for work outside SDK RPCs and keep it quiescent until its signal aborts. There is no package-name or manifest-only exemption.\n- This first change targets unused workers. Used Daytona workers remain awake until remote cleanup receipts are complete. Restarting does not bypass durable lease and recovery checks.\n- Unknown completion remains a blocker, including after a worker crash. This can retain cost but cannot authorize sleep from a timeout alone.\n- Enabled jobs, schedules, credentials, integrations, and other durable work remain blockers. Durable wake ownership is separate follow-up work.\n- Rollback restores the blanket plugin blocker. No data migration is required.\n\n## Model Used\n\nOpenAI Codex, GPT-6. Used repository inspection, reasoning, code editing, and command execution. The runtime did not report an exact model revision or context-window size.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have either linked existing public issues or described the issue in this PR\n- [x] I have not referenced internal or instance-local issues or links\n- [x] My branch name describes the change and contains no internal identifiers\n- [x] Focused local tests pass; full CI is green (local full-run limitation is recorded above)\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation\n- [x] I have considered and documented risks\n- [x] All Paperclip CI gates are green\n- [x] Greptile Apex is 5/5 on 6ffb682894 with no open findings\n- [x] I will address all review comments before requesting merge\n",
+      "area": "idle-sleep",
+      "merge_sha": "3d1d5294d994c2c787cabb28b48c6c8de40a7490",
+      "files": [
+        {
+          "path": "packages/plugins/sdk/src/idle-drain.ts",
+          "change": "A",
+          "additions": 67,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/plugin-idle-manager.test.ts",
+          "change": "A",
+          "additions": 98,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/plugin-idle-rpc.test.ts",
+          "change": "A",
+          "additions": 89,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/idle-sleep-safety.ts",
+          "change": "M",
+          "additions": 18,
+          "deletions": 3
+        },
+        {
+          "path": "packages/plugins/sdk/src/idle-drain.test.ts",
+          "change": "A",
+          "additions": 55,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/fixtures/plugin-worker-idle.cjs",
+          "change": "A",
+          "additions": 27,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/idle-sleep-safety.test.ts",
+          "change": "M",
+          "additions": 16,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/plugin-worker-manager.ts",
+          "change": "M",
+          "additions": 115,
+          "deletions": 2
+        },
+        {
+          "path": "packages/plugins/sdk/src/worker-rpc-host.ts",
+          "change": "M",
+          "additions": 43,
+          "deletions": 8
+        },
+        {
+          "path": "doc/plugins/PLUGIN_AUTHORING_GUIDE.md",
+          "change": "M",
+          "additions": 32,
+          "deletions": 0
+        },
+        {
+          "path": "packages/plugins/sandbox-providers/daytona/src/plugin.ts",
+          "change": "M",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "path": "packages/plugins/sdk/src/define-plugin.ts",
+          "change": "M",
+          "additions": 11,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/routes/instance-settings.ts",
+          "change": "M",
+          "additions": 5,
+          "deletions": 2
+        },
+        {
+          "path": "packages/plugins/sdk/src/protocol.ts",
+          "change": "M",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/app.ts",
+          "change": "M",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/instance-settings-routes.test.ts",
+          "change": "M",
+          "additions": 29,
+          "deletions": 4
+        },
+        {
+          "path": "packages/plugins/sandbox-providers/daytona/src/plugin.test.ts",
+          "change": "M",
+          "additions": 15,
+          "deletions": 0
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 15522,
+          "kind": "mention",
+          "evidence": "Refs #15522. Related: #15391 adds plugin readiness for agent admission; this change concerns instance sleep and does not replace that contract.",
+          "via": "mention"
+        },
+        {
+          "number": 15391,
+          "kind": "mention",
+          "evidence": "Refs #15522. Related: #15391 adds plugin readiness for agent admission; this change concerns instance sleep and does not replace that contract.",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 15629,
+      "title": "fix: checkpoint database backups before idle sleep",
+      "state": "MERGED",
+      "merged_at": 1791500335,
+      "closed_at": 1791500335,
+      "created_at": 1791496905,
+      "author": "devinfoley",
+      "url": "https://github.com/paperclipai/paperclip/pull/15629",
+      "body": "## Thinking Path\n\n> - Paperclip coordinates agent work and preserves company state.\n> - Hosted instances can stop compute when admission and all work sources are quiet.\n> - The periodic database backup timer currently blocks every automatic sleep.\n> - Disabling backups would remove recovery points.\n> - This change offers an explicit final-backup checkpoint before sleep.\n> - A verified archive and restart marker preserve recovery while compute is stopped.\n\n## Linked Issues or Issue Description\n\n**What happened?**\n\nAn otherwise idle instance with automatic backups enabled always reports background work. Operators cannot reclaim idle compute without disabling those backups. The work inventory also queries the database before checking known local blockers.\n\n**Expected behavior**\n\nAn operator can enable checkpoint mode. The server may authorize sleep only after all other work is quiet and a fresh backup is verified under the same owned hold. Backups resume on restart with the existing retention policy.\n\n**Steps to reproduce**\n\nAcquire a bounded idle drain on an instance with no application work and automatic backups enabled. Read its owned idle safety report. It reports present even when all other work is clear. With this change and `PAPERCLIP_DB_BACKUP_IDLE_CHECKPOINT_ENABLED=1`, a successful final backup can permit sleep; backup failures still refuse it.\n\n**Paperclip version or commit**\n\nReproduced from master at 4265cb3a2b.\n\n**Deployment mode**\n\nHosted single-process instances with persistent backup storage and serialized sleep/wake operations.\n\nSearched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; this change verifies only opted-in sleep checkpoints and their restart catch-up.\n\n## What Changed\n\n- Add an off-by-default checkpoint flag. Keep automatic backups enabled.\n- Reject known local blockers before database work.\n- Finish a new backup during each owned safety check, including final revalidation.\n- Verify the complete gzip archive and sync its file and directory before pruning older recovery points.\n- Use unique checkpoint filenames so repeated checks cannot replace an earlier verified archive.\n- Keep backup work counted through dump, validation and persistence. Changed owners, expired holds, concurrent work and errors refuse sleep.\n- Persist a restart marker before the dump. Attempt a fresh backup on restart before idle eligibility, then resume the normal timer. Only a verified fresh backup clears the marker.\n- Restrict managed checkpoint reads to verified Cloud control actors. Tenant instance-admin elevation does not grant backup authority.\n- Keep archive verification outside engine fallback so failures retain their original cause.\n- Document that recurring duplicate archives pause while asleep. The final checkpoint and historical archives remain on persistent storage; retention does not prune while asleep.\n\n## Verification\n\n- Focused idle, spool, backup and route checks: 137 tests passed, including restoration into a separate PostgreSQL database.\n- Backup library and checkpoint tests: 15 passed, including rejection before historical backups can be pruned.\n- `pnpm -r typecheck` and `pnpm build` passed. Follow-up server typecheck and database build cover the verification callback.\n- Review follow-up: 51 backup/restore/startup tests, 122 route/safety tests, 32 signed-control tests, and server typecheck passed. Startup cases exercise both flag states and retry after failure. The final test-cleanup adjustment passes all 35 startup tests.\n- The full local run hit four ancestor-directory skill-fixture failures and one tool-route failure. All five passed from an isolated checkout at 949210 (3 targeted chat/tool checks and the complete 39-test email suite). The redundant local run was stopped after final-head hosted CI passed. No full local pass is claimed.\n- Added-line secret/private-reference review and `git diff --check` passed.\n- [Final-head hosted CI](https://github.com/paperclipai/paperclip/actions/runs/37853380365) passed, including typecheck, build, all general and serialized test shards, all eight E2E shards and the canary dry run. Apex is 5/5 on 5b1de388ef, with no new findings and all review threads resolved. The branch is conflict-free. Live staging activation awaits merge and a canonical image; no production configuration or deployment changed.\n\n## Risks\n\n- The flag defaults off. This is for a single process whose host controls every writer and preserves its backup volume across sleep. Independent database writers require a different backup owner.\n- Safety reads perform a backup only after a valid owned drain and all other checks pass. Slow backups can outlive the caller timeout; they remain counted until their work settles and cannot authorize sleep after hold expiry.\n- Initial and final reads each take a fresh backup. Hosts must allow sufficient request time while retaining shutdown headroom.\n- Retention settings are unchanged. Sleeping instances stop producing duplicate hourly archives and retain their last checkpoint. Filesystem data, encryption keys and off-provider disaster recovery remain separate responsibilities.\n- No schema migration. Disable the checkpoint flag to restore the blanket backup blocker; automatic backups and an existing restart marker remain active.\n\n## Model Used\n\nOpenAI Codex, GPT-6. Used reasoning, repository inspection, code editing and command execution. The runtime did not expose an exact model revision or context-window size.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have described the issue in-PR following the bug report template\n- [x] I have not referenced internal/instance-local Paperclip issues or links\n- [x] My branch name describes the change and contains no internal identifier\n- [x] Focused and isolated local checks pass; final-head hosted CI is green (local full-run limitation documented above)\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation\n- [x] I have considered and documented risks\n- [x] All Paperclip CI gates are green\n- [x] Greptile is 5/5 with no open P2s, recommendations, or follow-ups\n- [x] I will address all review comments before requesting merge\n",
+      "area": "idle-sleep",
+      "merge_sha": "9b624a110e281badc54cbdf37ddb792cdc1690ff",
+      "files": [
+        {
+          "path": "server/src/services/idle-database-backup.ts",
+          "change": "A",
+          "additions": 52,
+          "deletions": 0
+        },
+        {
+          "path": "doc/idle-sleep-safety.md",
+          "change": "M",
+          "additions": 41,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/__tests__/idle-database-backup.test.ts",
+          "change": "A",
+          "additions": 92,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/idle-sleep-safety.test.ts",
+          "change": "M",
+          "additions": 71,
+          "deletions": 4
+        },
+        {
+          "path": "packages/db/src/backup-lib.ts",
+          "change": "M",
+          "additions": 20,
+          "deletions": 9
+        },
+        {
+          "path": "server/src/services/idle-sleep-safety.ts",
+          "change": "M",
+          "additions": 16,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/services/idle-local-work.ts",
+          "change": "M",
+          "additions": 4,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/routes/instance-database-backups.ts",
+          "change": "M",
+          "additions": 1,
+          "deletions": 1
+        },
+        {
+          "path": "packages/db/src/backup-lib.test.ts",
+          "change": "M",
+          "additions": 33,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/idle-local-work.test.ts",
+          "change": "M",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/server-startup-feedback-export.test.ts",
+          "change": "M",
+          "additions": 67,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/index.ts",
+          "change": "M",
+          "additions": 19,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/routes/instance-settings.ts",
+          "change": "M",
+          "additions": 13,
+          "deletions": 3
+        },
+        {
+          "path": "doc/DEVELOPING.md",
+          "change": "M",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/app.ts",
+          "change": "M",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/instance-settings-routes.test.ts",
+          "change": "M",
+          "additions": 40,
+          "deletions": 4
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 15522,
+          "kind": "mention",
+          "evidence": "Searched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; this change verifies",
+          "via": "mention"
+        },
+        {
+          "number": 15599,
+          "kind": "mention",
+          "evidence": "Searched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; this change verifies",
+          "via": "mention"
+        },
+        {
+          "number": 15358,
+          "kind": "mention",
+          "evidence": "Searched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; this change verifies",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 15614,
+      "title": "perf(server): stop polling five empty delivery queues",
+      "state": "CLOSED",
+      "merged_at": null,
+      "closed_at": 1791493864,
+      "created_at": 1791489545,
+      "author": "cryppadotta",
+      "url": "https://github.com/paperclipai/paperclip/pull/15614",
+      "body": "## Thinking Path\n\n> - Paperclip manages work for companies of AI agents.\n> - Its server must deliver saved feedback, answers, and continuation receipts.\n> - Five delivery queues scan the database on a fixed interval even when empty.\n> - These queries keep idle databases active and add traffic to hosted instances.\n> - This pull request wakes those queues from the transaction that creates work.\n> - Startup recovery and retries still protect unfinished delivery.\n> - Empty queues stop their timers and wait for the next committed write.\n\n## Linked Issues or Issue Description\n\n**What existing behavior does this improve?**\n\nBackground delivery of feedback exports, chat completions, connection continuations, question answers, and tool-action receipts.\n\n**Subsystem affected**\n\n`server/` orchestration and `packages/db` transaction handling.\n\n**Current behavior**\n\nFeedback exports scan every five seconds. Four other queues scan on the heartbeat scheduler interval, normally 30 seconds. Empty queues still query the database.\n\n**Proposed behavior**\n\nSubscribe before startup recovery. Wake the queue when its producer transaction settles. Run only one sweep per queue at a time. Keep a recovery timer while work remains or a query fails. Stop the timer after a successful empty scan.\n\n**Reason and benefit**\n\nRemove avoidable idle SQL and network traffic without dropping durable delivery records. This is a first step toward instance sleep; other loops remain.\n\n**Breaking changes**\n\nNo schema or HTTP contract changes. Notifications are local to one `createDb` instance and its transactions. Independent SQL clients and other server replicas cannot wake this consumer. Their writes require a separate notification/recovery design. Current server service writers are covered.\n\n**Additional context**\n\nRelated: #15599 handles plugin drain before sleep. #15391 handles plugin readiness and lifecycle hints. Neither replaces these delivery queue scans.\n\n## What Changed\n\n- Add transaction-aware work signals to `createDb`, including nested transactions and caller-owned transactions. Publish before route or activity side effects can fail.\n- Use one shared worker implementation for the five queues. Coalesce signals, prevent overlapping sweeps, track active work for idle admission, and await work on shutdown.\n- Remove the five empty-queue polling paths. Retain existing durable claims, retry behavior, and startup reconciliation.\n- Serialize route and worker feedback flushes to prevent duplicate concurrent uploads.\n- Save the sleep inventory and record this first migration and its remaining work.\n\n## Verification\n\n- `pnpm -r typecheck` passed. Direct database and server typechecks passed after the final changes.\n- `pnpm build` passed. The changed database and server packages were rebuilt successfully at the final commit.\n- Six existing delivery integration suites: 259 tests passed against temporary PostgreSQL.\n- Added assertions for all five producer signals. The completion journey proves dispatch without a route callback and recovery after consumer restart. A fixture initially left the first reporting turn unadmitted; after correcting that fixture, all 44 completion tests passed.\n- Final commit-signal and worker tests: 15 passed. These cover nested and concurrent transactions, rollback, ambiguous commit, enqueue/empty-check races, retries, shutdown, drain/standby, and an hour of simulated empty-queue inactivity.\n- Startup wiring regression suite passed. Worker and idle-sleep safety regressions: 51 tests passed.\n- Full local `pnpm test:run` was stopped after all final-head hosted checks passed. It reported one 15-second conversation-route timeout; all 40 tests in that file passed on isolated rerun. No clean full local-suite pass is claimed.\n- Greptile completed on `90619cdeaf2c021566cbef8f508ae5d87b033e38`: 5/5, no actionable findings, zero review threads. All 56 final-head check/status entries are clean (success or intentional skip), including the complete hosted test matrix, build, typecheck, end-to-end tests, canary, and security checks.\n\n- The first hosted workspace attempt hit a temporary PostgreSQL connection refusal in a CLI worktree fixture. Its one rerun passed. All other hosted jobs passed on the first final-head attempt. A local reproduction stopped earlier at embedded PostgreSQL initialization and did not reproduce the same CI failure.\n\n## Risks\n\n- This removes empty scans, not all polling. Outstanding or blocked deliveries, including pending tool reviews, retain recovery checks. Review expiry and execution scans are unchanged.\n- A lost commit acknowledgement leaves a conservative recovery timer and idle-admission hold active until restart. A consumer started later inherits that uncertainty. An empty read cannot prove that the uncertain commit will not become visible later.\n- New producers must signal through the same instrumented database scope. A persistent database listener is not introduced.\n- This does not add the instance-wide scheduler or external waker and does not establish provider sleep or cost savings.\n\n## Model Used\n\nOpenAI Codex, GPT-6. Used reasoning, repository inspection, code editing, and command execution. The runtime did not expose the exact model revision or context window.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template\n- [x] I have not referenced internal/instance-local Paperclip issues or links (only public GitHub `#NNN` / `github.com/paperclipai/paperclip` URLs)\n- [x] My branch name describes the change (e.g. `docs/...`, `fix/...`) and contains no internal Paperclip ticket id or instance-derived details\n- [x] I have run tests locally and they pass\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation to reflect my changes\n- [x] I have considered and documented any risks above\n- [x] All Paperclip CI gates are green\n- [x] Greptile is 5/5 with no open P2s, recommendations, or follow-ups\n- [x] I will address all Greptile and reviewer comments before requesting merge\n",
+      "area": "idle-sleep",
+      "merge_sha": "",
+      "files": [
+        {
+          "path": "doc/plans/2026-10-08-instance-sleep-and-scheduler-inventory.md",
+          "change": "A",
+          "additions": 874,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/delivery-queue-worker.ts",
+          "change": "A",
+          "additions": 94,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/delivery-queue-worker.test.ts",
+          "change": "A",
+          "additions": 104,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/tool-gateway.ts",
+          "change": "M",
+          "additions": 7,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/tool-gateway-service.test.ts",
+          "change": "M",
+          "additions": 7,
+          "deletions": 0
+        },
+        {
+          "path": "packages/db/src/work-signals.ts",
+          "change": "A",
+          "additions": 71,
+          "deletions": 0
+        },
+        {
+          "path": "packages/db/src/work-signals.test.ts",
+          "change": "A",
+          "additions": 81,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/feedback.ts",
+          "change": "M",
+          "additions": 22,
+          "deletions": 2
+        },
+        {
+          "path": "server/src/index.ts",
+          "change": "M",
+          "additions": 18,
+          "deletions": 34
+        },
+        {
+          "path": "doc/DATABASE.md",
+          "change": "M",
+          "additions": 15,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/app.ts",
+          "change": "M",
+          "additions": 13,
+          "deletions": 35
+        },
+        {
+          "path": "server/src/services/chat-completion-delivery.ts",
+          "change": "M",
+          "additions": 8,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/services/tool-action-delivery.ts",
+          "change": "M",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/connection-intent-delivery.ts",
+          "change": "M",
+          "additions": 5,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/services/question-response-delivery.ts",
+          "change": "M",
+          "additions": 5,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/services/issue-thread-interactions.ts",
+          "change": "M",
+          "additions": 4,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/services/tool-action-review.ts",
+          "change": "M",
+          "additions": 3,
+          "deletions": 0
+        },
+        {
+          "path": "packages/db/src/client.ts",
+          "change": "M",
+          "additions": 2,
+          "deletions": 1
+        },
+        {
+          "path": "packages/db/src/index.ts",
+          "change": "M",
+          "additions": 2,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/chat-completion-delivery.test.ts",
+          "change": "M",
+          "additions": 29,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/feedback-service.test.ts",
+          "change": "M",
+          "additions": 10,
+          "deletions": 1
+        },
+        {
+          "path": "server/src/__tests__/connection-intents-service.test.ts",
+          "change": "M",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/issue-thread-interactions-service.test.ts",
+          "change": "M",
+          "additions": 6,
+          "deletions": 0
+        },
+        {
+          "path": "server/src/__tests__/server-startup-feedback-export.test.ts",
+          "change": "M",
+          "additions": 6,
+          "deletions": 2
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 15599,
+          "kind": "mention",
+          "evidence": "Related: #15599 handles plugin drain before sleep. #15391 handles plugin readiness and lifecycle hints. Neither replaces these delivery queue scans.",
+          "via": "mention"
+        },
+        {
+          "number": 15391,
+          "kind": "mention",
+          "evidence": "Related: #15599 handles plugin drain before sleep. #15391 handles plugin readiness and lifecycle hints. Neither replaces these delivery queue scans.",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    },
+    {
+      "number": 9563,
+      "title": "feat(mcp) [split 8/8]: add e2e coverage and operator docs",
+      "state": "MERGED",
+      "merged_at": 1784062137,
+      "closed_at": 1784062137,
+      "created_at": 1784042967,
+      "author": "cryppadotta",
+      "url": "https://github.com/paperclipai/paperclip/pull/9563",
+      "body": "## Thinking Path\n\n> - Paperclip is the open source app people use to manage AI agents for work\n> - Governed MCP access spans contracts, runtime enforcement, adapters, UI surfaces, and operator verification\n> - The parity reference PR #9534 is too large for effective automated or human review\n> - The feature therefore needs a linear stack whose individual diffs stay below the 100-file review limit\n> - This pull request is split 8/8 and focuses on end-to-end coverage, operator docs, evals, and release notes\n> - The benefit is a standalone, testable review boundary while preserving byte-for-byte parity at the top of the stack\n\n## Linked Issues or Issue Description\n\n- Related parity reference: #9534\n- Problem: The complete stack needs discoverable browser scenarios, operator guidance, threat modeling, eval coverage, and a parity proof before merge.\n- Proposed solution: Adds MCP user-story and Smoke Lab e2e suites, docs/evals/release notes, the skill update, and the root e2e driver script registration.\n- Alternatives considered: keeping #9534 as one 403-file review, or rewriting the feature to manufacture seams; both were rejected in favor of path extraction plus compile-driven boundary moves.\n- Roadmap alignment: this advances the existing governed MCP/tool-access work already represented by #9534; it does not introduce a separate roadmap initiative.\n- Stack position: base branch is `pap10341-split/07-ui-apps-activation`.\n- Merge policy: merge bottom-up, in order, only after the complete eight-PR stack has been reviewed and the top-of-stack parity gate remains empty.\n- Requested review: QA for flag audit and e2e/browser acceptance; Greptile on every PR.\n\n## What Changed\n\n- Adds MCP user-story and Smoke Lab e2e suites, docs/evals/release notes, the skill update, and the root e2e driver script registration.\n- Keeps this PR below 100 changed files and independently typecheckable.\n- Preserves the final tree from #9534 when combined with the other seven stack levels.\n\n## Verification\n\n- `pnpm typecheck`\n- `node --check scripts/e2e-mcp-user-stories.mjs`\n- `pnpm exec playwright test --config tests/e2e/playwright.config.ts --list` \u2014 43 tests discovered\n- `git diff pap10341-split/08-e2e-docs 6b40e3876d9297105d4ec306e47e46d351c86172` \u2014 empty (0 bytes)\n\n## Risks\n\n- Browser suites depend on runtime services and environment setup; this PR validates discovery locally while QA owns full flag-on/flag-off execution.\n- Stack risk: merging out of order can expose incomplete layers; mitigate by following the documented bottom-up merge policy.\n- Parity risk: later edits to an intermediate branch can drift from #9534; mitigate by re-running the empty top-of-stack diff before merge.\n\n> For core feature work, check [`ROADMAP.md`](ROADMAP.md) first and discuss it in `#dev` before opening the PR. Feature PRs that overlap with planned core work may need to be redirected \u2014 check the roadmap first. See `CONTRIBUTING.md`.\n\n## Model Used\n\n- OpenAI Codex, exact model ID `gpt-5.4`; runtime-managed context window; medium reasoning with repository, shell, Git, GitHub CLI, and code-execution tools enabled.\n\n## Checklist\n\n- [x] I have included a thinking path that traces from project context to this change\n- [x] I have specified the model used (with version and capability details)\n- [x] I have checked ROADMAP.md and confirmed this PR does not duplicate planned core work\n- [x] I have searched GitHub for duplicate or related PRs and linked them above\n- [x] I have either (a) linked existing issues with `Fixes: #` / `Closes #` / `Refs #` OR (b) described the issue in-PR following the relevant issue template\n- [x] Internal references are omitted except the execution-plan link explicitly required for this coordinated split stack\n- [x] My branch name describes the change and contains no internal Paperclip ticket id or instance-derived details\n- [x] I have run tests locally and they pass\n- [x] I have added or updated tests where applicable\n- [x] I have updated relevant documentation to reflect my changes\n- [x] I have considered and documented any risks above\n- [ ] All Paperclip CI gates are green\n- [ ] Greptile is 5/5 with no open P2s, recommendations, or follow-ups\n- [x] I will address all Greptile and reviewer comments before requesting merge\n\n\n## Stack Coordination\n\n- Internal execution plan: [PAP-13874](/PAP/issues/PAP-13874#document-plan)\n- Parity reference: #9534\n- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563\n- Merge bottom-up only after full-stack review and an empty parity diff at #9563.\n",
+      "area": "mcp-access",
+      "merge_sha": "3db2e6bdd2a30bf8860b54361c3b44af0da3cb75",
+      "files": [
+        {
+          "path": "doc/MCP-ACCESS-GOVERNANCE.md",
+          "change": "A",
+          "additions": 431,
+          "deletions": 0
+        },
+        {
+          "path": "doc/MCP-DEMO-SCRIPT.md",
+          "change": "A",
+          "additions": 387,
+          "deletions": 0
+        },
+        {
+          "path": "doc/MCP-RUNTIME-OPERATIONS.md",
+          "change": "A",
+          "additions": 149,
+          "deletions": 0
+        },
+        {
+          "path": "doc/RELEASE-NOTES-mcp-access-governance.md",
+          "change": "A",
+          "additions": 100,
+          "deletions": 0
+        },
+        {
+          "path": "doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md",
+          "change": "A",
+          "additions": 400,
+          "deletions": 0,
+          "doc": true
+        },
+        {
+          "path": "evals/promptfoo/tests/mcp-gateway.yaml",
+          "change": "A",
+          "additions": 332,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/mcp-user-stories.catalog.ts",
+          "change": "A",
+          "additions": 131,
+          "deletions": 0
+        },
+        {
+          "path": "evals/promptfoo/mcp-gateway-run-summary.md",
+          "change": "A",
+          "additions": 49,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/apps-prosumer-mcp-flow.spec.ts",
+          "change": "A",
+          "additions": 314,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/mcp-user-stories.spec.ts",
+          "change": "A",
+          "additions": 458,
+          "deletions": 0
+        },
+        {
+          "path": "evals/promptfoo/mcp-gateway-gap-memo.md",
+          "change": "A",
+          "additions": 30,
+          "deletions": 0
+        },
+        {
+          "path": "scripts/e2e-mcp-user-stories.mjs",
+          "change": "A",
+          "additions": 25,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/CONNECTOR-PLAYBOOK.md",
+          "change": "A",
+          "additions": 359,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/FIRST-30-MATRIX.md",
+          "change": "A",
+          "additions": 122,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/README.md",
+          "change": "A",
+          "additions": 117,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/SECURITY-THREAT-MODEL.md",
+          "change": "A",
+          "additions": 268,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/SMOKE-LAB-BROWSER-RUNNER.md",
+          "change": "A",
+          "additions": 158,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/SMOKE-LAB-TUTORIAL.md",
+          "change": "A",
+          "additions": 296,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/smoke-lab-browser-runner.mts",
+          "change": "A",
+          "additions": 352,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/smoke-lab-routine.mts",
+          "change": "A",
+          "additions": 425,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/smoke-lab.catalog.ts",
+          "change": "A",
+          "additions": 175,
+          "deletions": 0
+        },
+        {
+          "path": "doc/connections/GLOSSARY.md",
+          "change": "A",
+          "additions": 72,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/app-not-connected.spec.ts",
+          "change": "A",
+          "additions": 180,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/applications-crud.spec.ts",
+          "change": "A",
+          "additions": 154,
+          "deletions": 0
+        },
+        {
+          "path": "tests/e2e/apps-dark-mode-shots.spec.ts",
+          "change": "A",
+          "additions": 190,
+          "deletions": 0
+        }
+      ],
+      "fixes": [],
+      "references": [
+        {
+          "number": 9534,
+          "kind": "mention",
+          "evidence": "> - The parity reference PR #9534 is too large for effective automated or human review",
+          "via": "mention"
+        },
+        {
+          "number": 9556,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        },
+        {
+          "number": 9557,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        },
+        {
+          "number": 9558,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        },
+        {
+          "number": 9559,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        },
+        {
+          "number": 9560,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        },
+        {
+          "number": 9561,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        },
+        {
+          "number": 9562,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        },
+        {
+          "number": 9563,
+          "kind": "mention",
+          "evidence": "- Stack: #9556 \u2192 #9557 \u2192 #9558 \u2192 #9559 \u2192 #9560 \u2192 #9561 \u2192 #9562 \u2192 #9563",
+          "via": "mention"
+        }
+      ],
+      "supersedes": []
+    }
+  ],
+  "issues": [
+    {
+      "number": 14548,
+      "title": "Cost read endpoints never expose cost_status: a proven $0 cost is indistinguishable from an unknown cost",
+      "state": "OPEN",
+      "state_reason": "",
+      "created_at": 1790679046,
+      "closed_at": null,
+      "author": "panoskoun",
+      "url": "https://github.com/paperclipai/paperclip/issues/14548",
+      "body": "## Summary\n\n`cost_events.cost_status` is written, stored, and correct \u2014 and is then read by **nothing**. The column is never selected in a single cost read query, so every cost API returns `costCents: 0` with no way for a consumer to distinguish **\"the cost is zero\"** from **\"we do not know the cost\"**.\n\nThis makes `costs/summary` structurally incapable of supporting budget enforcement, and it is the same missing primitive that #5598 asks for under the name \"NULL-usage guardrail\".\n\n## Environment\n\n- `paperclipai` / `@paperclipai/server` **2026.916.1**\n- Self-hosted, embedded Postgres\n- Company: 4 agents, 1 project, 1 provider, 1 model, 9 `cost_events` rows, all `cost_status = 'reported'`\n\n## The data is already there\n\n`server/dist/services/costs.d.ts` \u2014 `createEvent` returns the field:\n\n```ts\ncreateEvent: (companyId, data) => Promise<{\n    ...\n    costCents: number;\n    costStatus: string;   // <-- present on the write path\n    ...\n}>\n```\n\n`server/dist/services/heartbeat.js:3278` computes it:\n\n```js\nexport function resolveLedgerCostStatus(input) {\n    const hasTokenUsage = input.inputTokens > 0 ||\n        input.cachedInputTokens > 0 ||\n        input.outputTokens > 0;\n    return input.costUsd == null && hasTokenUsage ? \"unpriced\" : \"reported\";\n}\n```\n\nThe logic is right: token usage present but no price \u21d2 `unpriced`; an explicit `0` price \u21d2 `reported`. A free model that genuinely reports `costUsd: 0` is correctly `reported`, and that is exactly the distinction that is currently thrown away at read time.\n\n## The read path drops it\n\n`server/dist/services/costs.js` \u2014 the string `cost_status` occurs **0 times**; `costStatus` occurs **0 times**. It is never projected in any query. Confirmed against the declared return types in `costs.d.ts`:\n\n| method | returns `costStatus`? |\n|---|---|\n| `createEvent` | **yes** (write path only) |\n| `summary` | no |\n| `byAgent` | no |\n| `byAgentModel` | no |\n| `byProvider` | no |\n| `byBiller` | no |\n| `byProject` | no |\n| `windowSpend` | no |\n| `issueTreeSummary` | no |\n\nVerified live against every cost read endpoint on a 2026.916.1 instance. Actual responses:\n\n```\nGET /costs/by-agent-model\n[{ \"agentId\":\"...\",\"agentName\":\"Recruiter\",\"provider\":\"opencode\",\n   \"biller\":\"openrouter\",\"billingType\":\"unknown\",\n   \"model\":\"opencode/space-bunny-free\",\"costCents\":0,\n   \"inputTokens\":240805,\"cachedInputTokens\":22905889,\"outputTokens\":166629 }]\n\nGET /costs/summary\n{ \"companyId\":\"...\",\"spendCents\":0,\"budgetCents\":0,\"utilizationPercent\":0 }\n```\n\n`by-agent-model` is the worst case: it reports `costCents: 0` next to 25M tokens of usage. A consumer has no way to know whether that is a free model, a mispriced model, or a model whose price the registry has never heard of. All three look identical.\n\n`summary` is worse: it returns no event count at all, so not only can you not count `unpriced` events, you cannot even compute an event-weighted rate limit.\n\n## Why this blocks budget enforcement\n\n`computeObservedAmount` reads `sum(cost_cents)`. On an all-free instance that is `0` forever, so the soft threshold, the hard stop, and `getInvocationBlock` are all unreachable \u2014 a budget policy set today would look armed and would never fire. That is the correct behaviour *for this instance*; it is the **reporting** that is broken. An operator cannot tell \"my budget is not being consumed because the model is free\" from \"my budget is not being consumed because the meter is blind\".\n\n## Proposal\n\n1. Add `costStatus` to the read projections in `costs.js` \u2014 at minimum `byAgentModel`, `byProvider`, `byAgent`, `byBiller`.\n2. Add a derived `unpricedEventCount` to `summary` (and to the per-row endpoints as `unpricedEventCount`).\n3. Add `eventCount` to `summary` so a `0` spend rate is interpretable without a second round trip.\n4. Surface `unpriced` in the UI next to the cost figure rather than rendering a bare `0`.\n\nAdditive only \u2014 no existing field changes shape.\n\n## Acceptance criteria (machine-checkable)\n\n- [ ] `GET /costs/by-agent-model` returns a `costStatus` field per row, and it is populated for every row.\n- [ ] `GET /costs/summary` returns `unpricedEventCount` and `eventCount`.\n- [ ] Given a `cost_events` fixture with (a) `cost_cents = 0, cost_status = 'reported', input_tokens > 0` and (b) `cost_cents = 0, cost_status = 'unpriced', input_tokens > 0`, the two rows are distinguishable in the `by-agent-model` response without inspecting any other field.\n- [ ] `server/src/__tests__/costs-service.test.ts` covers the case above for `byAgentModel` and for `summary`'s `unpricedEventCount`.\n- [ ] `pnpm --filter server test costs-service` passes.\n- [ ] `pnpm --filter @paperclipai/shared build` passes with the new fields on the `CostByAgentModel` / `CostSummary` types.\n- [ ] Backward compatible: existing response fields are unchanged; no new field is required by existing clients.\n\n## Not in scope\n\n- Changing `resolveLedgerCostStatus` semantics. It is correct as written.\n- Pricing any `unpriced` model. Surfacing the state is the ask; deciding a price is a per-model decision.\n- `runCountsByBillingType` on the read endpoints \u2014 that is #11422, and this issue should be additive to it rather than overlapping it.\n\n## Related\n\n- #5598 \u2014 asks for a \"NULL-usage guardrail\" on paid models. That is this same `costStatus` primitive, asked for from the alerting side. Worth cross-linking; the two should not be implemented twice.\n- #11566 \u2014 quotes `heartbeat_runs.usage_json` carrying `costStatus: \"reported\"` while `cost_cents` reads `0`, i.e. the same lost distinction from the opposite direction.\n- #11422 \u2014 sibling gap on the `billingType` axis (run counts); same shape, different column.\n\n## Why this was not fixed in place by the reporter\n\nThe reporter runs a self-hosted `2026.916.1` from the `npx` cache. Patching the cache is reverted by any restart and would be an unowned change to a running production server, so this is reported upstream rather than patched.\n",
+      "area": "costs"
+    }
+  ],
+  "docs": [
+    {
+      "path": "doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md",
+      "kind": "adr",
+      "title": "2026-06-05-agent-access-mcp-runtime-slots-adr.md",
+      "status": "Accepted for MVP implementation contracts, pending SecurityEngineer and UXDesigner validation gates.",
+      "area": "mcp-access",
+      "url": "https://github.com/paperclipai/paperclip/blob/master/doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md"
+    }
+  ],
+  "reviews": [
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1790985762,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1790986794,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1790987629,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791050445,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791086527,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791086529,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791086531,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791088108,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791088763,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791088765,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791088770,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791089228,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092908,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092909,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092910,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092911,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092912,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092913,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092915,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092916,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092917,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092918,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791092939,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791098261,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791098603,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791305926,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791306988,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791306990,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791308845,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791309117,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791310369,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791311434,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791312718,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791313107,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791317484,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791318242,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791319105,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791320836,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791323349,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791324991,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791325967,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791326998,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791327935,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791329238,
+      "is_bot": false
+    },
+    {
+      "pr": 14991,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791330082,
+      "is_bot": true
+    },
+    {
+      "pr": 14991,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791331409,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1790985092,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1790986082,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791049659,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791086801,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791086803,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791086805,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791086808,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791087937,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791088767,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791088769,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791088771,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791089893,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791090732,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791090734,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791090736,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791091451,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092125,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092919,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092920,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092922,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791095212,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791096315,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791096639,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791097455,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791098568,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791099212,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791099214,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791099216,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791100177,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791100983,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791101554,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791101780,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791101782,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791305881,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791306992,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791306994,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791308665,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791309119,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791309121,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791309940,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791311436,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791312271,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791313110,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791313112,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791313863,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791315267,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791319332,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791320838,
+      "is_bot": false
+    },
+    {
+      "pr": 14994,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791321614,
+      "is_bot": true
+    },
+    {
+      "pr": 14994,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791322310,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1790985639,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1790986999,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791049990,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791087352,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791087354,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791087357,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791087360,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791087362,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791088921,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791089533,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791089535,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092923,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092924,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092926,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092927,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791092929,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791092989,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791093853,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791096258,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791096261,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791096263,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791096265,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791096267,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791096916,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791097802,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791102827,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791103900,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791103902,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791104619,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791105190,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791105655,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791106086,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791305884,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791306997,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791306999,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791307001,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791307004,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791307063,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791310186,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791311438,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791311441,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791311443,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791311445,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791314240,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791315271,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791315273,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791315275,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791319431,
+      "is_bot": true
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791320840,
+      "is_bot": false
+    },
+    {
+      "pr": 14997,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791320843,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791049312,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791087904,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791088481,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791089544,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791305554,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791307012,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791307014,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791321539,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791322312,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791327740,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791329233,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791329235,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "superagent-security[bot]",
+      "state": "COMMENTED",
+      "at": 1791337392,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791337600,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "superagent-security[bot]",
+      "state": "COMMENTED",
+      "at": 1791337615,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "superagent-security[bot]",
+      "state": "COMMENTED",
+      "at": 1791342448,
+      "is_bot": true
+    },
+    {
+      "pr": 15001,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791342691,
+      "is_bot": false
+    },
+    {
+      "pr": 15001,
+      "login": "superagent-security[bot]",
+      "state": "COMMENTED",
+      "at": 1791342706,
+      "is_bot": true
+    },
+    {
+      "pr": 15522,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791424152,
+      "is_bot": true
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791424405,
+      "is_bot": false
+    },
+    {
+      "pr": 15522,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791430366,
+      "is_bot": true
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791430589,
+      "is_bot": false
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791430590,
+      "is_bot": false
+    },
+    {
+      "pr": 15522,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791443520,
+      "is_bot": true
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791444053,
+      "is_bot": false
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791444055,
+      "is_bot": false
+    },
+    {
+      "pr": 15522,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791471207,
+      "is_bot": true
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791471402,
+      "is_bot": false
+    },
+    {
+      "pr": 15522,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791472443,
+      "is_bot": true
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791472977,
+      "is_bot": false
+    },
+    {
+      "pr": 15522,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791472978,
+      "is_bot": false
+    },
+    {
+      "pr": 15599,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791486491,
+      "is_bot": true
+    },
+    {
+      "pr": 15599,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791486766,
+      "is_bot": false
+    },
+    {
+      "pr": 15599,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791486767,
+      "is_bot": false
+    },
+    {
+      "pr": 15629,
+      "login": "superagent-security[bot]",
+      "state": "COMMENTED",
+      "at": 1791497112,
+      "is_bot": true
+    },
+    {
+      "pr": 15629,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791497412,
+      "is_bot": true
+    },
+    {
+      "pr": 15629,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791497798,
+      "is_bot": false
+    },
+    {
+      "pr": 15629,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791497799,
+      "is_bot": false
+    },
+    {
+      "pr": 15629,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791497801,
+      "is_bot": false
+    },
+    {
+      "pr": 15629,
+      "login": "superagent-security[bot]",
+      "state": "COMMENTED",
+      "at": 1791497811,
+      "is_bot": true
+    },
+    {
+      "pr": 15629,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1791498252,
+      "is_bot": true
+    },
+    {
+      "pr": 15629,
+      "login": "devinfoley",
+      "state": "COMMENTED",
+      "at": 1791498332,
+      "is_bot": false
+    },
+    {
+      "pr": 9563,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1784043205,
+      "is_bot": true
+    },
+    {
+      "pr": 9563,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1784043438,
+      "is_bot": true
+    },
+    {
+      "pr": 9563,
+      "login": "cryppadotta",
+      "state": "COMMENTED",
+      "at": 1784046008,
+      "is_bot": false
+    },
+    {
+      "pr": 9563,
+      "login": "cryppadotta",
+      "state": "COMMENTED",
+      "at": 1784046010,
+      "is_bot": false
+    },
+    {
+      "pr": 9563,
+      "login": "cryppadotta",
+      "state": "COMMENTED",
+      "at": 1784046011,
+      "is_bot": false
+    },
+    {
+      "pr": 9563,
+      "login": "cryppadotta",
+      "state": "COMMENTED",
+      "at": 1784046013,
+      "is_bot": false
+    },
+    {
+      "pr": 9563,
+      "login": "cryppadotta",
+      "state": "COMMENTED",
+      "at": 1784046014,
+      "is_bot": false
+    },
+    {
+      "pr": 9563,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1784051347,
+      "is_bot": true
+    },
+    {
+      "pr": 9563,
+      "login": "greptile-apps[bot]",
+      "state": "COMMENTED",
+      "at": 1784059518,
+      "is_bot": true
+    }
+  ],
+  "decisions": [
+    {
+      "id": "decision:2e5f037d8b78",
+      "summary": "Separate ordinary and cached input tokens using each provider format. Preserve explicit zero prices and missing prices as distinct states, including later unpriced Gemini usage.",
+      "rationale": "Separate ordinary and cached input tokens using each provider format. Preserve explicit zero prices and missing prices as distinct states, including later unpriced Gemini usage.",
+      "status": "accepted",
+      "source_quote": "Separate ordinary and cached input tokens using each provider format. Preserve explicit zero prices and missing prices as distinct states, including later unpriced Gemini usage.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/14991",
+      "section": "body",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:14991",
+      "area": "costs",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Separate ordinary and cached input tokens using each provider format. Preserve explicit zero prices and missing prices as distinct states, including later unpriced Gemini usage.",
+          "issues": [
+            14548,
+            12538,
+            212,
+            14989,
+            14991
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:a918a4f3dca2",
+      "summary": "Classify managed custom Responses routes as API usage with their routed biller; retain unknown prices instead of treating them as ChatGPT subscriptions or direct OpenAI.",
+      "rationale": "Classify managed custom Responses routes as API usage with their routed biller; retain unknown prices instead of treating them as ChatGPT subscriptions or direct OpenAI.",
+      "status": "accepted",
+      "source_quote": "Classify managed custom Responses routes as API usage with their routed biller; retain unknown prices instead of treating them as ChatGPT subscriptions or direct OpenAI.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/14991",
+      "section": "body",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:14991",
+      "area": "costs",
+      "alternatives": [
+        {
+          "description": "treating them as ChatGPT subscriptions or direct OpenAI",
+          "reason_rejected": "Classify managed custom Responses routes as API usage with their routed biller; retain unknown prices instead of treating them as ChatGPT subscriptions or direct OpenAI.",
+          "ref": null
+        }
+      ],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Classify managed custom Responses routes as API usage with their routed biller; retain unknown prices instead of treating them as ChatGPT subscriptions or direct OpenAI.",
+          "issues": [
+            14548,
+            12538,
+            212,
+            14989,
+            14991
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:1d76470ae66e",
+      "summary": "POSIX storage paths require readable, flushable ancestors; permission failures block credential exchange until corrected. Provider quota endpoints and CLI output can change. Creden",
+      "rationale": "POSIX storage paths require readable, flushable ancestors; permission failures block credential exchange until corrected. Provider quota endpoints and CLI output can change. Credential recovery includes file and database failure paths; it must not expose credentials or cross company boundaries.",
+      "status": "accepted",
+      "source_quote": "POSIX storage paths require readable, flushable ancestors; permission failures block credential exchange until corrected. Provider quota endpoints and CLI output can change. Credential recovery includes file and database failure paths; it must not expose credentials or cross company boundaries.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/14994",
+      "section": "body",
+      "confidence": 0.85,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:14994",
+      "area": "costs",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "POSIX storage paths require readable, flushable ancestors; permission failures block credential exchange until corrected. Provider quota endpoints and CLI output can change. Credential recovery includes file and database failure paths; it must not expose credentials or cross company boundaries.",
+          "issues": [
+            14360,
+            14997,
+            14989,
+            14991,
+            14994
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:70399d3a759a",
+      "summary": "Retries preserve one charge, unknown prices remain visible, and budget decisions use consistent totals.",
+      "rationale": "Retries preserve one charge, unknown prices remain visible, and budget decisions use consistent totals.",
+      "status": "accepted",
+      "source_quote": "Retries preserve one charge, unknown prices remain visible, and budget decisions use consistent totals.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/14997",
+      "section": "body",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:14997",
+      "area": "costs",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Retries preserve one charge, unknown prices remain visible, and budget decisions use consistent totals.",
+          "issues": [
+            14548,
+            5598,
+            12538,
+            212,
+            11419
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:f5b3fec3561d",
+      "summary": "Legacy managed runner checkpoints lacking a baseline remain pending instead of attributing old session spend to the current run; new runs can resume prospective accounting after a ",
+      "rationale": "Legacy managed runner checkpoints lacking a baseline remain pending instead of attributing old session spend to the current run; new runs can resume prospective accounting after a complete baseline is established.",
+      "status": "accepted",
+      "source_quote": "Legacy managed runner checkpoints lacking a baseline remain pending instead of attributing old session spend to the current run; new runs can resume prospective accounting after a complete baseline is established.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/14997",
+      "section": "body",
+      "confidence": 0.85,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:14997",
+      "area": "costs",
+      "alternatives": [
+        {
+          "description": "attributing old session spend to the current run; new runs can resume prospective accounting after a complete baseline is established",
+          "reason_rejected": "Legacy managed runner checkpoints lacking a baseline remain pending instead of attributing old session spend to the current run; new runs can resume prospective accounting after a complete baseline is established.",
+          "ref": null
+        }
+      ],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Legacy managed runner checkpoints lacking a baseline remain pending instead of attributing old session spend to the current run; new runs can resume prospective accounting after a complete baseline is established.",
+          "issues": [
+            14548,
+            5598,
+            12538,
+            212,
+            11419
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:edcf9e19e7aa",
+      "summary": "The instance task-drain API reports process counters. It does not prove that a host can safely stop the instance for idle sleep.",
+      "rationale": "The instance task-drain API reports process counters. It does not prove that a host can safely stop the instance for idle sleep.",
+      "status": "accepted",
+      "source_quote": "The instance task-drain API reports process counters. It does not prove that a host can safely stop the instance for idle sleep.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15522",
+      "section": "body",
+      "confidence": 0.85,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15522",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "The instance task-drain API reports process counters. It does not prove that a host can safely stop the instance for idle sleep.",
+          "issues": [
+            13413
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:2023afac0aee",
+      "summary": "The hosting controller must use the owned protocol and hold external admission through its final validation and provider stop. A legacy drain cannot authorize idle sleep.",
+      "rationale": "The hosting controller must use the owned protocol and hold external admission through its final validation and provider stop. A legacy drain cannot authorize idle sleep.",
+      "status": "accepted",
+      "source_quote": "The hosting controller must use the owned protocol and hold external admission through its final validation and provider stop. A legacy drain cannot authorize idle sleep.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15522",
+      "section": "body",
+      "confidence": 0.85,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15522",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "The hosting controller must use the owned protocol and hold external admission through its final validation and provider stop. A legacy drain cannot authorize idle sleep.",
+          "issues": [
+            13413
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:05add2d57a19",
+      "summary": "This change adds a live worker drain under the existing owned hold.",
+      "rationale": "This change adds a live worker drain under the existing owned hold.",
+      "status": "accepted",
+      "source_quote": "This change adds a live worker drain under the existing owned hold.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15599",
+      "section": "body",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15599",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "This change adds a live worker drain under the existing owned hold.",
+          "issues": [
+            15522,
+            15391
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:0ed58936fafa",
+      "summary": "Require a live `onIdleDrain` handshake from each worker. Close admission in both processes for the exact owner and expiry. Count accepted work until completion. Continue checking d",
+      "rationale": "Require a live `onIdleDrain` handshake from each worker. Close admission in both processes for the exact owner and expiry. Count accepted work until completion. Continue checking durable work separately.",
+      "status": "accepted",
+      "source_quote": "Require a live `onIdleDrain` handshake from each worker. Close admission in both processes for the exact owner and expiry. Count accepted work until completion. Continue checking durable work separately.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15599",
+      "section": "body",
+      "confidence": 0.85,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15599",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Require a live `onIdleDrain` handshake from each worker. Close admission in both processes for the exact owner and expiry. Count accepted work until completion. Continue checking durable work separately.",
+          "issues": [
+            15522,
+            15391
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:99adb24e02d9",
+      "summary": "This change offers an explicit final-backup checkpoint before sleep.",
+      "rationale": "This change offers an explicit final-backup checkpoint before sleep.",
+      "status": "accepted",
+      "source_quote": "This change offers an explicit final-backup checkpoint before sleep.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15629",
+      "section": "body",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15629",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "This change offers an explicit final-backup checkpoint before sleep.",
+          "issues": [
+            15522,
+            15599,
+            15358
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:038861afdd4b",
+      "summary": "Searched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; ",
+      "rationale": "Searched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; this change verifies only opted-in sleep checkpoints and their restart catch-up.",
+      "status": "accepted",
+      "source_quote": "Searched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; this change verifies only opted-in sleep checkpoints and their restart catch-up.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15629",
+      "section": "body",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15629",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Searched open backup and sleep PRs and issues. Related: #15522 and #15599 establish owned idle holds and plugin drains. #15358 proposes general backup health/retention validation; this change verifies only opted-in sleep checkpoints and their restart catch-up.",
+          "issues": [
+            15522,
+            15599,
+            15358
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:618d49c35ab0",
+      "summary": "Related: #15599 handles plugin drain before sleep. #15391 handles plugin readiness and lifecycle hints. Neither replaces these delivery queue scans.",
+      "rationale": "Related: #15599 handles plugin drain before sleep. #15391 handles plugin readiness and lifecycle hints. Neither replaces these delivery queue scans.",
+      "status": "rejected",
+      "source_quote": "Related: #15599 handles plugin drain before sleep. #15391 handles plugin readiness and lifecycle hints. Neither replaces these delivery queue scans.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15614",
+      "section": "body",
+      "confidence": 0.775,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15614",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Related: #15599 handles plugin drain before sleep. #15391 handles plugin readiness and lifecycle hints. Neither replaces these delivery queue scans.",
+          "issues": [
+            15599,
+            15391
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:34eb083f07c7",
+      "summary": "Empty queues stop their timers and wait for the next committed write.",
+      "rationale": "Empty queues stop their timers and wait for the next committed write.",
+      "status": "rejected",
+      "source_quote": "Empty queues stop their timers and wait for the next committed write.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/15614",
+      "section": "body",
+      "confidence": 0.775,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:15614",
+      "area": "idle-sleep",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Empty queues stop their timers and wait for the next committed write.",
+          "issues": [
+            15599,
+            15391
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:609c7b78c24c",
+      "summary": "Alternatives considered: keeping #9534 as one 403-file review, or rewriting the feature to manufacture seams; both were rejected in favor of path extraction plus compile-driven bou",
+      "rationale": "Alternatives considered: keeping #9534 as one 403-file review, or rewriting the feature to manufacture seams; both were rejected in favor of path extraction plus compile-driven boundary moves.",
+      "status": "accepted",
+      "source_quote": "Alternatives considered: keeping #9534 as one 403-file review, or rewriting the feature to manufacture seams; both were rejected in favor of path extraction plus compile-driven boundary moves.",
+      "source_url": "https://github.com/paperclipai/paperclip/pull/9563",
+      "section": "body",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "pr:9563",
+      "area": "mcp-access",
+      "alternatives": [
+        {
+          "description": "keeping #9534 as one 403-file review, or rewriting the feature to manufacture seams; both were rejected in favor of path extraction plus compile-driven boundary moves.",
+          "reason_rejected": "keeping #9534 as one 403-file review, or rewriting the feature to manufacture seams; both were rejected in favor of path extraction plus compile-driven boundary moves.",
+          "ref": "#9534"
+        }
+      ],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Alternatives considered: keeping #9534 as one 403-file review, or rewriting the feature to manufacture seams; both were rejected in favor of path extraction plus compile-driven boundary moves.",
+          "issues": [
+            9534,
+            9534,
+            9534,
+            9534,
+            9534
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:e5be71cdb35a",
+      "summary": "`runCountsByBillingType` on the read endpoints \u2014 that is #11422, and this issue should be additive to it rather than overlapping it.",
+      "rationale": "`runCountsByBillingType` on the read endpoints \u2014 that is #11422, and this issue should be additive to it rather than overlapping it.",
+      "status": "proposed",
+      "source_quote": "`runCountsByBillingType` on the read endpoints \u2014 that is #11422, and this issue should be additive to it rather than overlapping it.",
+      "source_url": "https://github.com/paperclipai/paperclip/issues/14548",
+      "section": "body",
+      "confidence": 0.85,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "issue:14548",
+      "area": "costs",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "`runCountsByBillingType` on the read endpoints \u2014 that is #11422, and this issue should be additive to it rather than overlapping it.",
+          "issues": [
+            5598,
+            11422,
+            5598,
+            11566,
+            11422
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:843d93ad757d",
+      "summary": "The reporter runs a self-hosted `2026.916.1` from the `npx` cache. Patching the cache is reverted by any restart and would be an unowned change to a running production server, so t",
+      "rationale": "The reporter runs a self-hosted `2026.916.1` from the `npx` cache. Patching the cache is reverted by any restart and would be an unowned change to a running production server, so this is reported upstream rather than patched.",
+      "status": "proposed",
+      "source_quote": "The reporter runs a self-hosted `2026.916.1` from the `npx` cache. Patching the cache is reverted by any restart and would be an unowned change to a running production server, so this is reported upstream rather than patched.",
+      "source_url": "https://github.com/paperclipai/paperclip/issues/14548",
+      "section": "body",
+      "confidence": 0.85,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "issue:14548",
+      "area": "costs",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "The reporter runs a self-hosted `2026.916.1` from the `npx` cache. Patching the cache is reverted by any restart and would be an unowned change to a running production server, so this is reported upstream rather than patched.",
+          "issues": [
+            5598,
+            11422,
+            5598,
+            11566,
+            11422
+          ]
+        }
+      ]
+    },
+    {
+      "id": "decision:8eedc48a6573",
+      "summary": "Current plugin/MCP surfaces are useful, but they do not provide a single default-deny policy engine, durable invocation ledger, runtime-slot supervisor, redacted audit model, or ap",
+      "rationale": "Current plugin/MCP surfaces are useful, but they do not provide a single default-deny policy engine, durable invocation ledger, runtime-slot supervisor, redacted audit model, or approval-safe tool execution path.",
+      "status": "proposed",
+      "source_quote": "Current plugin/MCP surfaces are useful, but they do not provide a single default-deny policy engine, durable invocation ledger, runtime-slot supervisor, redacted audit model, or approval-safe tool execution path.",
+      "source_url": "https://github.com/paperclipai/paperclip/blob/master/doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md",
+      "section": "adr_decision",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "doc:doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md",
+      "area": "mcp-access",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "Current plugin/MCP surfaces are useful, but they do not provide a single default-deny policy engine, durable invocation ledger, runtime-slot supervisor, redacted audit model, or approval-safe tool execution path.",
+          "issues": []
+        }
+      ]
+    },
+    {
+      "id": "decision:60bff88ab083",
+      "summary": "UI must never be the enforcement boundary. Designs must make default deny, approval wait, denied direct call, missing secret, runtime failure, and changed-tool quarantine states ob",
+      "rationale": "UI must never be the enforcement boundary. Designs must make default deny, approval wait, denied direct call, missing secret, runtime failure, and changed-tool quarantine states obvious.",
+      "status": "proposed",
+      "source_quote": "UI must never be the enforcement boundary. Designs must make default deny, approval wait, denied direct call, missing secret, runtime failure, and changed-tool quarantine states obvious.",
+      "source_url": "https://github.com/paperclipai/paperclip/blob/master/doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md",
+      "section": "adr_decision",
+      "confidence": 0.925,
+      "extractor": "offline",
+      "model": null,
+      "extracted_from": "doc:doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md",
+      "area": "mcp-access",
+      "alternatives": [],
+      "supersedes": [],
+      "premises": [
+        {
+          "text": "UI must never be the enforcement boundary. Designs must make default deny, approval wait, denied direct call, missing secret, runtime failure, and changed-tool quarantine states obvious.",
+          "issues": []
+        }
+      ]
+    }
+  ]
+}

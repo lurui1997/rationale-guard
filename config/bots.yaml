@@ -1,0 +1,9 @@
+logins:
+  - dependabot[bot]
+  - github-actions[bot]
+  - greptile-apps[bot]
+  - coderabbitai[bot]
+  - codecov[bot]
+  - sonarcloud[bot]
+  - imgbot[bot]
+  - renovate[bot]

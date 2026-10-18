@@ -1,0 +1,22 @@
+repo: paperclipai/paperclip
+max_prs: 30
+max_files_per_pr: 25
+areas:
+  - slug: costs
+    name: Cost accounting
+    keywords: [cost, costs, billing, usage, accounting, price, checkpoint, unpriced]
+    seeds:
+      issues: [14548]
+      prs: [14991, 14994, 14997, 15001]
+  - slug: idle-sleep
+    name: Idle sleep
+    keywords: [idle, sleep, drain, fence, backup, polling, queue]
+    seeds:
+      prs: [15522, 15599, 15629, 15614]
+  - slug: mcp-access
+    name: MCP access
+    keywords: [mcp, gateway, default-deny, "default deny", "tool access", "runtime slot"]
+    seeds:
+      prs: [9563]
+      docs:
+        - doc/plans/2026-06-05-agent-access-mcp-runtime-slots-adr.md

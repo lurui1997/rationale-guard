@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      falkordb:
+        image: falkordb/falkordb:latest
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Wait for FalkorDB
+        env:
+          FALKORDB_URL: redis://127.0.0.1:6379
+        run: |
+          python - << 'PY'
+          import time
+          from falkordb import FalkorDB
+          last = None
+          for _ in range(30):
+              try:
+                  FalkorDB.from_url("redis://127.0.0.1:6379").select_graph("ping").query("RETURN 1")
+                  print("falkordb ready")
+                  break
+              except Exception as exc:
+                  last = exc
+                  time.sleep(2)
+          else:
+              raise SystemExit(f"FalkorDB did not start: {last}")
+          PY
+      - name: Tests
+        env:
+          FALKORDB_URL: redis://127.0.0.1:6379
+        run: python -m pytest
+      - name: Offline eval
+        env:
+          FALKORDB_URL: redis://127.0.0.1:6379
+          GUARD_JUDGE: offline
+        run: python -m eval --judge offline

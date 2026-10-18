@@ -1,0 +1,21 @@
+name: Rationale Guard
+description: Comment on a pull request when a diff contradicts a past engineering decision stored in FalkorDB.
+inputs:
+  api_url:
+    description: Base URL of a Rationale Guard server you operate.
+    required: true
+  github_token:
+    description: Token that can write pull request comments and check runs on this repository.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Run the guard and update the sticky comment
+      shell: bash
+      env:
+        RATIONALE_API_URL: ${{ inputs.api_url }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: python "${{ github.action_path }}/../../../action/post_guard.py"
