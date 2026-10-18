@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -27,6 +28,52 @@ _db: FalkorDB | None = None
 
 class GraphError(RuntimeError):
     """Raised when FalkorDB cannot be reached or a query fails. Never swallow this."""
+
+
+class InvalidGraphName(ValueError):
+    """The name cannot be a FalkorDB graph key. This is a client error, not an outage."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(
+            "Invalid graph name. Use 1 to 64 characters: a letter or underscore, then letters, digits, or underscores."
+        )
+
+
+class GraphNotFound(Exception):
+    """The graph is not in GRAPH.LIST. A query would create an empty graph, so reads must stop here."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__("graph not found")
+
+
+_known_graphs: set[str] | None = None
+_known_lock = threading.Lock()
+
+
+def _cached_known(name: str) -> bool:
+    with _known_lock:
+        return _known_graphs is not None and name in _known_graphs
+
+
+def _replace_known(names: set[str]) -> None:
+    global _known_graphs
+    with _known_lock:
+        _known_graphs = names
+
+
+def _remember_known(name: str) -> None:
+    global _known_graphs
+    with _known_lock:
+        if _known_graphs is not None:
+            _known_graphs.add(name)
+
+
+def _forget_known(name: str) -> None:
+    with _known_lock:
+        if _known_graphs is not None:
+            _known_graphs.discard(name)
 
 
 def describe_url(url: str) -> dict[str, Any]:
@@ -157,9 +204,26 @@ class Store:
         self.db = db or get_db()
 
     def graph(self, name: str):
-        if not GRAPH_NAME.fullmatch(name):
-            raise ValueError(f"refusing graph name {name!r}")
+        if not isinstance(name, str) or not GRAPH_NAME.fullmatch(name):
+            raise InvalidGraphName(name if isinstance(name, str) else "")
         return self.db.select_graph(name)
+
+    def require(self, name: str) -> None:
+        """Reject a bad or unknown graph before a query can create an empty key."""
+        if not isinstance(name, str) or not GRAPH_NAME.fullmatch(name):
+            raise InvalidGraphName(name if isinstance(name, str) else "")
+        if _cached_known(name):
+            return
+        names = set(self.list_graphs())
+        _replace_known(names)
+        if name not in names:
+            raise GraphNotFound(name)
+
+    def remember_graph(self, name: str) -> None:
+        _remember_known(name)
+
+    def forget_graph(self, name: str) -> None:
+        _forget_known(name)
 
     def query(
         self,
@@ -167,12 +231,22 @@ class Store:
         cypher: str,
         params: dict[str, Any] | None = None,
         timeout: int | None = None,
+        create: bool = False,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        if create:
+            if not isinstance(name, str) or not GRAPH_NAME.fullmatch(name):
+                raise InvalidGraphName(name if isinstance(name, str) else "")
+        else:
+            self.require(name)
         started = time.perf_counter()
         try:
             result = self.graph(name).query(cypher, params or {}, timeout=timeout)
+        except (InvalidGraphName, GraphNotFound):
+            raise
         except Exception as exc:  # driver raises ResponseError and connection errors
             raise GraphError(f"FalkorDB query failed: {exc}") from exc
+        if create:
+            self.remember_graph(name)
         elapsed = round((time.perf_counter() - started) * 1000, 2)
         trace = {
             "cypher": cypher.strip(),
@@ -197,6 +271,7 @@ class Store:
             from rationale.graphcache import invalidate
 
             invalidate(name)
+            self.forget_graph(name)
 
     def list_graphs(self) -> list[str]:
         try:

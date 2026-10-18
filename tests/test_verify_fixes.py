@@ -143,7 +143,7 @@ def store():
     reset_db()
     current = Store()
     try:
-        current.query("rationale_test_probe", "RETURN 1 AS ok")
+        current.query("rationale_test_probe", "RETURN 1 AS ok", create=True)
     except Exception as exc:  # pragma: no cover
         pytest.fail(f"FalkorDB is not reachable: {exc}")
     yield current
@@ -467,3 +467,40 @@ def test_second_guard_reuses_cached_graph_data(store, monkeypatch):
     assert "betweenness" not in blob
     assert "query_name" not in blob
     store.delete_graph(name)
+
+
+def test_bad_graph_name_is_400_and_missing_graph_is_not_created():
+    from fastapi.testclient import TestClient
+
+    from rationale.api import main
+    from rationale.db import GraphNotFound, Store
+
+    name = "rationale_test_absent_graph"
+    store = Store()
+    if name in store.list_graphs():
+        store.delete_graph(name)
+    main._seed_status["state"] = "ready"
+    diff = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-a\n+b\n"
+    with TestClient(main.app) as client:
+        bad = client.get("/api/health", params={"graph": "not a graph"})
+        missing = client.get("/api/health", params={"graph": name})
+        guarded = client.post(
+            "/api/guard",
+            json={"repo": "example/missing", "graph": name, "diff": diff, "judge": "offline"},
+        )
+        malformed = client.post(
+            "/api/guard",
+            json={"repo": "example/missing", "graph": "bad name", "diff": diff, "judge": "offline"},
+        )
+    assert bad.status_code == 400
+    assert "Invalid graph name" in bad.json()["detail"]
+    assert "falkordb" not in bad.text.lower()
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "graph not found"
+    assert guarded.status_code == 404
+    assert guarded.json()["detail"] == "graph not found"
+    assert "pass" not in guarded.text
+    assert malformed.status_code == 400
+    assert name not in Store().list_graphs()
+    with pytest.raises(GraphNotFound):
+        Store().ping(name)

@@ -85,7 +85,7 @@ def upsert(store: Store, graph: str, label: str, node_id: str, props: dict[str, 
         params[key] = _clean(props[key])
         assignments.append(f"n.{key} = ${key}")
     cypher = f"MERGE (n:{label} {{id: $id}}) SET " + ", ".join(assignments)
-    store.query(graph, cypher, params)
+    store.query(graph, cypher, params, create=True)
 
 
 def ensure_node(store: Store, graph: str, label: str, node_id: str, props: dict[str, Any]) -> None:
@@ -99,7 +99,7 @@ def ensure_node(store: Store, graph: str, label: str, node_id: str, props: dict[
         params[key] = _clean(props[key])
         assignments.append(f"n.{key} = ${key}")
     cypher = f"MERGE (n:{label} {{id: $id}}) ON CREATE SET " + ", ".join(assignments)
-    store.query(graph, cypher, params)
+    store.query(graph, cypher, params, create=True)
 
 
 def relate(
@@ -126,7 +126,7 @@ def relate(
         f"MATCH (a {{id: $src}}), (b {{id: $dst}}) "
         f"MERGE (a)-[r:{rel}]->(b){set_clause}"
     )
-    store.query(graph, cypher, params)
+    store.query(graph, cypher, params, create=True)
 
 
 def path_symbols(path: str) -> list[str]:
@@ -483,7 +483,7 @@ def _upsert_decision(store: Store, graph: str, node_id: str, props: dict[str, An
             END
         """
     )
-    store.query(graph, cypher, params)
+    store.query(graph, cypher, params, create=True)
 
 
 def _write_collaboration(store: Store, graph: str) -> None:

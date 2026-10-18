@@ -29,8 +29,8 @@ FULLTEXT = "CALL db.idx.fulltext.createNodeIndex('Decision', 'summary', 'rationa
 
 
 def _touch(store: Store, graph: str) -> None:
-    store.query(graph, "CREATE (:__Touch {id: '__touch__'})")
-    store.query(graph, "MATCH (n:__Touch {id: '__touch__'}) DELETE n")
+    store.query(graph, "CREATE (:__Touch {id: '__touch__'})", create=True)
+    store.query(graph, "MATCH (n:__Touch {id: '__touch__'}) DELETE n", create=True)
 
 
 def ensure_schema(store: Store, graph: str) -> list[str]:
@@ -38,7 +38,7 @@ def ensure_schema(store: Store, graph: str) -> list[str]:
     _touch(store, graph)
     for statement in INDEXES:
         try:
-            store.query(graph, statement)
+            store.query(graph, statement, create=True)
             notes.append(statement)
         except GraphError as exc:
             message = str(exc).lower()
@@ -47,7 +47,7 @@ def ensure_schema(store: Store, graph: str) -> list[str]:
             logger.warning("Index statement failed: %s", exc)
             notes.append(f"skip: {exc}")
     try:
-        store.query(graph, FULLTEXT)
+        store.query(graph, FULLTEXT, create=True)
         notes.append(FULLTEXT)
     except GraphError as exc:
         message = str(exc).lower()

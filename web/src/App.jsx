@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const SEED_GRAPH = "rationale__paperclipai__paperclip";
 
 function hideDbLocation(text) {
   const raw = String(text || "");
@@ -36,13 +38,16 @@ export default function App() {
   const [graph, setGraph] = useState("");
   const [lastDiff, setLastDiff] = useState("");
   const [authorName, setAuthorName] = useState("");
+  const healthSeq = useRef(0);
 
   async function refreshHealth(selectedGraph) {
     const target = selectedGraph === undefined ? graph : selectedGraph;
+    const seq = ++healthSeq.current;
     const params = new URLSearchParams();
     if (target) params.set("graph", target);
     try {
       const response = await fetch(`/api/health${params.toString() ? `?${params}` : ""}`);
+      if (seq !== healthSeq.current) return;
       if (!response.ok) {
         setHealth(null);
         setHealthError(await readError(response));
@@ -51,6 +56,7 @@ export default function App() {
       setHealth(await response.json());
       setHealthError("");
     } catch (err) {
+      if (seq !== healthSeq.current) return;
       setHealth(null);
       setHealthError(hideDbLocation(err.message || "Graph offline"));
     }
@@ -76,14 +82,18 @@ export default function App() {
     setLearned(body.learned || []);
   }
 
-  const offline = !health || health.falkordb !== true;
-  const loading = Boolean(health?.loading);
+  const selectedName = graph || SEED_GRAPH;
+  const matched = health && health.graph === selectedName ? health : null;
+  const loading = Boolean(matched?.loading);
+  const offline = matched ? matched.falkordb !== true : !health && Boolean(healthError) && healthError !== "graph not found";
 
   function rememberReport(body) {
+    const nextGraph = body.graph === SEED_GRAPH ? "" : (body.graph || graph);
     if (body.repo) setRepo(body.repo);
-    if (body.graph) setGraph(body.graph);
+    if (body.graph) setGraph(nextGraph);
     setReport(body);
-    refreshLearned(body.repo || repo, body.graph || graph);
+    refreshLearned(body.repo || repo, nextGraph);
+    refreshHealth(nextGraph);
   }
 
   async function runGuard(nextDiff, nextUrl, options = {}) {
@@ -112,7 +122,6 @@ export default function App() {
       const body = await response.json();
       setLastDiff(nextUrl ? "" : (nextDiff || ""));
       rememberReport(body);
-      refreshHealth();
     } catch (err) {
       setError(err.message || "Guard failed");
     } finally {
@@ -175,8 +184,8 @@ export default function App() {
           </p>
         </div>
         <div className={offline ? "health off" : "health on"}>
-          <strong>{loading ? "Loading seed" : offline ? "Graph offline" : "Graph online"}</strong>
-          <span>{health ? `${health.graph} · ${loading ? "loading" : `${health.nodes} nodes · ${health.edges ?? 0} edges`}` : healthError || "Checking FalkorDB"}</span>
+          <strong>{loading ? "Loading seed" : offline ? "Graph offline" : healthError && !matched ? healthError : matched ? "Graph online" : "Checking graph"}</strong>
+          <span>{matched && !loading ? `${selectedName} · ${matched.nodes} nodes · ${matched.edges ?? 0} edges` : selectedName}</span>
         </div>
       </header>
       {loading && <div className="banner">Loading the paperclip seed. The guard starts when that graph is ready.</div>}
@@ -186,7 +195,7 @@ export default function App() {
         <section className="panel">
           <label>Repository graph</label>
           <select
-            value={graph}
+            value={graph === SEED_GRAPH ? "" : graph}
             onChange={(event) => {
               const next = event.target.value;
               if (!next) {

@@ -12,7 +12,7 @@ import sys
 from typing import Any
 
 from rationale import __version__
-from rationale.db import GraphError, Store, graph_name_for_repo
+from rationale.db import GraphError, GraphNotFound, InvalidGraphName, Store, graph_name_for_repo
 from rationale.explain import why as explain_why
 from rationale.guard import run_guard
 from rationale.judge import JudgeError
@@ -106,6 +106,16 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
         try:
             payload = call_tool(params.get("name"), params.get("arguments") or {})
             return _result(msg_id, {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}], "isError": False})
+        except GraphNotFound:
+            return _result(
+                msg_id,
+                {"content": [{"type": "text", "text": "graph not found"}], "isError": True},
+            )
+        except InvalidGraphName as exc:
+            return _result(
+                msg_id,
+                {"content": [{"type": "text", "text": str(exc)}], "isError": True},
+            )
         except GraphError as exc:
             logger.error("Graph unavailable: %s", exc)
             return _result(

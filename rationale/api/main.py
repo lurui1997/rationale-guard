@@ -16,11 +16,11 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from rationale.db import GraphError, Store, graph_name_for_repo, repo_from_graph, reset_db
+from rationale.db import GraphError, GraphNotFound, InvalidGraphName, Store, graph_name_for_repo, repo_from_graph, reset_db
 from rationale.explain import why
 from rationale.graphcache import run_parallel
 from rationale.guard import run_guard
@@ -128,7 +128,10 @@ def ensure_seed(store: Store | None = None) -> None:
     snapshot = load_json(path)
     graph = graph_name_for_repo(snapshot["repo"])
     store = store or _store()
-    count = store.ping(graph)
+    try:
+        count = store.ping(graph)
+    except GraphNotFound:
+        count = 0
     if count > 0:
         return
     logger.info("Loading seed into %s", graph)
@@ -178,12 +181,42 @@ def _decision_counts(store: Store, names: list[str]) -> list[dict[str, Any]]:
     return [counted[name] for name in names]
 
 
+def _loading_health(target: str) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "falkordb": True,
+        "loading": True,
+        "graph": target,
+        "nodes": 0,
+        "edges": 0,
+        "graphs": [],
+        "repos": [],
+    }
+
+
+@app.exception_handler(InvalidGraphName)
+async def invalid_graph_name(_request: Request, exc: InvalidGraphName) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(GraphNotFound)
+async def missing_graph(_request: Request, exc: GraphNotFound) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": "graph not found"})
+
+
 @app.get("/api/health")
 def health(graph: str | None = None) -> dict[str, Any]:
     loading = _seed_status["state"] == "loading"
+    seed_name = graph_name_for_repo("paperclipai/paperclip")
+    target = graph or seed_name
     try:
         store = _store()
-        target = graph or graph_name_for_repo("paperclipai/paperclip")
+        try:
+            store.require(target)
+        except GraphNotFound:
+            if loading and graph is None:
+                return _loading_health(target)
+            raise
 
         def nodes() -> int:
             return store.ping(target)
@@ -207,6 +240,8 @@ def health(graph: str | None = None) -> dict[str, Any]:
             "graphs": [item["graph"] for item in parts["repos"]],
             "repos": parts["repos"],
         }
+    except (InvalidGraphName, GraphNotFound):
+        raise
     except Exception as exc:
         logger.error("Health check failed: %s", exc)
         raise HTTPException(
@@ -258,7 +293,10 @@ def guard(body: GuardBody, request: Request) -> dict[str, Any]:
     graph = built_graph or _graph(repo, body.graph)
     try:
         store = _store()
+        store.require(graph)
         node_count = store.ping(graph)
+    except (InvalidGraphName, GraphNotFound):
+        raise
     except GraphError as exc:
         logger.error("Guard refused because FalkorDB is unavailable: %s", exc)
         raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
@@ -470,7 +508,7 @@ def _pr_loaded(store: Store, graph: str, number: int) -> bool:
     try:
         if store.ping(graph) == 0:
             return False
-    except GraphError:
+    except (GraphError, GraphNotFound, InvalidGraphName):
         return False
     rows, _trace = store.query(
         graph,

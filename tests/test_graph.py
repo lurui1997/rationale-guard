@@ -16,7 +16,7 @@ def store():
     reset_db()
     try:
         current = Store()
-        current.query("rationale_test_probe", "RETURN 1 AS ok")
+        current.query("rationale_test_probe", "RETURN 1 AS ok", create=True)
     except Exception as exc:  # pragma: no cover - environment failure
         pytest.fail(f"FalkorDB is not reachable: {exc}")
     yield current
