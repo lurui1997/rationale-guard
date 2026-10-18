@@ -4,6 +4,13 @@ Rationale Guard is a decision guard for coding agents: before a change merges, i
 
 It is a submission for WeMakeDevs x FalkorDB **Graph Hacks: Context for AI Agents**.
 
+## Try it
+
+Live: [https://rationale-guard-production.up.railway.app](https://rationale-guard-production.up.railway.app)
+
+- Press a sample button. "Treat unknown adapter cost as zero" is the diff that should warn.
+- Or paste a public pull request, for example [https://github.com/Kludex/starlette/pull/3651](https://github.com/Kludex/starlette/pull/3651). The first visit builds that repository's graph, then guards the diff.
+
 | Track | How this entry uses it |
 |---|---|
 | Agents That Act on Connected Data (primary) | A diff or PR URL is the trigger. FalkorDB selects the decisions, premises, rejected alternatives, and experts. The GitHub Action posts one sticky comment and a check run. MCP exposes `guard_diff` so an agent can call it before committing. |
@@ -139,7 +146,7 @@ Cue suite, both judges: recall **1.00** (6/6), false positives **0/6**. Paraphra
 
 Bring-your-own ingest with no token: Kludex/starlette#3148 took 22.1 s (9 decisions, about 27 GitHub requests). #3436 took 22.1 s (15 decisions) and merged into the same graph (23 decisions, the existing correction kept). Guard on that graph was about 1.3–1.7 s. An override under the LLM judge flipped warn to pass on the next run.
 
-The per-case offline table higher up is an earlier local run on this tree. A later offline re-run, after the tie-break and scope-note filter, still shows cue recall 1.00 (6/6), paraphrase recall 0.00 (0/3), overall recall 0.67 (6/9), false positives 0/7, and graph-step p50 7.22 ms. Latency in that table is not the af5932a table in this section. The LLM numbers above were not re-measured in this environment.
+The per-case offline table higher up is an earlier local run on this tree. A later offline re-run, after the tie-break, scope-note filter, and the batched guard queries, still shows cue recall 1.00 (6/6), paraphrase recall 0.00 (0/3), overall recall 0.67 (6/9), false positives 0/7, and graph-step p50 6.24 ms. A warm guard on that run is five FalkorDB calls issued together (premises, alternatives, corrections, learned overrides, local people). The decision-to-file map and PageRank stay cached until the next ingest or correction. Latency in the per-case table is not the af5932a table in this section. The LLM numbers above were not re-measured in this environment.
 
 ## Quickstart
 
