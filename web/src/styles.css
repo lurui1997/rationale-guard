@@ -52,10 +52,11 @@ a { color: var(--brass-2); }
   padding: 16px; box-shadow: var(--shadow);
 }
 label { display: block; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-textarea, input[type="url"], input[type="text"] {
+textarea, input[type="url"], input[type="text"], select {
   width: 100%; background: #10140e; border: 1px solid var(--line); border-radius: 12px; padding: 12px;
 }
 textarea { min-height: 220px; resize: vertical; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; line-height: 1.45; }
+select { margin-bottom: 12px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
 .chip, .primary, .ghost {
   border-radius: 999px; border: 1px solid var(--line); background: transparent; padding: 8px 12px;

@@ -19,9 +19,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from rationale.db import GraphError, Store, graph_name_for_repo, reset_db
+from rationale.db import GraphError, Store, graph_name_for_repo, repo_from_graph, reset_db
 from rationale.explain import why
 from rationale.guard import run_guard
+from rationale.ingest.github_api import GitHubError, fetch_pr_diff
 from rationale.ingest.load import load_json, load_snapshot
 from rationale.ingest.pipeline import parse_pr_url, snapshot_from_pr
 from rationale.judge import JudgeError
@@ -44,6 +45,8 @@ class GuardBody(BaseModel):
     pr_url: str | None = None
     graph: str | None = None
     judge: str | None = None
+    # None with a PR URL builds or updates that repo's graph, then guards the diff.
+    ingest: bool | None = None
 
 
 class FeedbackBody(BaseModel):
@@ -125,8 +128,9 @@ def health() -> dict[str, Any]:
         store = _store()
         graph = graph_name_for_repo("paperclipai/paperclip")
         nodes = store.ping(graph)
-        graphs = [name for name in store.list_graphs() if name.startswith("rationale__")]
-        return {"ok": True, "falkordb": True, "graph": graph, "nodes": nodes, "graphs": graphs}
+        names = [name for name in store.list_graphs() if name.startswith("rationale__")]
+        repos = [{"graph": name, "repo": repo_from_graph(name)} for name in names]
+        return {"ok": True, "falkordb": True, "graph": graph, "nodes": nodes, "graphs": names, "repos": repos}
     except Exception as exc:
         logger.error("Health check failed: %s", exc)
         raise HTTPException(status_code=503, detail={"ok": False, "falkordb": False, "error": str(exc)}) from exc
@@ -149,16 +153,28 @@ def samples() -> dict[str, Any]:
 
 
 @app.post("/api/guard")
-def guard(body: GuardBody) -> dict[str, Any]:
+def guard(body: GuardBody, request: Request) -> dict[str, Any]:
     diff = body.diff or ""
+    repo = body.repo
+    built_graph: str | None = None
     if body.pr_url and not diff.strip():
-        diff = _diff_for_pr(body.pr_url)
-        repo, _number = parse_pr_url(body.pr_url)
-    else:
-        repo = body.repo
+        try:
+            parsed_repo, _number = parse_pr_url(body.pr_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        repo = parsed_repo
+        if body.ingest is not False:
+            try:
+                snapshot, built_graph, diff = _ingest_pr(body.pr_url, request)
+            except GraphError as exc:
+                logger.error("Ingest graph error: %s", exc)
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            repo = snapshot["repo"]
+        else:
+            diff = _diff_for_pr(body.pr_url)
     if not diff.strip():
         raise HTTPException(status_code=400, detail="Provide a unified diff or a public PR URL.")
-    graph = _graph(repo, body.graph)
+    graph = built_graph or _graph(repo, body.graph)
     try:
         store = _store()
         node_count = store.ping(graph)
@@ -243,13 +259,21 @@ def who(body: WhoBody) -> dict[str, Any]:
 
 @app.post("/api/ingest")
 def ingest(body: IngestBody, request: Request) -> dict[str, Any]:
-    _limit_ingest(request.client.host if request.client else "local")
     try:
         parse_pr_url(body.pr_url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _limit_ingest(request.client.host if request.client else "local")
+    _prune_jobs()
     job_id = uuid.uuid4().hex[:12]
-    job = {"id": job_id, "events": [{"step": "queued", "detail": body.pr_url}], "done": False, "error": None, "result": None}
+    job = {
+        "id": job_id,
+        "created": time.time(),
+        "events": [{"step": "queued", "detail": body.pr_url}],
+        "done": False,
+        "error": None,
+        "result": None,
+    }
     _jobs[job_id] = job
 
     def run() -> None:
@@ -257,24 +281,15 @@ def ingest(body: IngestBody, request: Request) -> dict[str, Any]:
             def progress(event: dict[str, Any]) -> None:
                 job["events"].append(event)
 
-            snapshot = snapshot_from_pr(body.pr_url, mode="auto", progress=progress)
-            graph = graph_name_for_repo(snapshot["repo"])
-            store = _store()
-            load_snapshot(store, snapshot, graph, reset=True)
+            snapshot, graph, diff = _load_pr_snapshot(body.pr_url, progress)
             _cache.clear()
-            from rationale.ingest.github_api import GitHubClient
-
-            client = GitHubClient(max_requests=5)
-            try:
-                _owner_repo, number = parse_pr_url(body.pr_url)
-                diff = client._client.get(
-                    f"https://github.com/{snapshot['repo']}/pull/{number}.diff",
-                    headers={"User-Agent": "rationale-guard"},
-                ).text
-            finally:
-                client.close()
-            report = run_guard(store, snapshot["repo"], diff, graph=graph, judge=body.judge)
-            job["result"] = {"graph": graph, "decisions": len(snapshot.get("decisions") or []), "guard": report}
+            report = run_guard(_store(), snapshot["repo"], diff, graph=graph, judge=body.judge)
+            job["result"] = {
+                "repo": snapshot["repo"],
+                "graph": graph,
+                "decisions": len(snapshot.get("decisions") or []),
+                "guard": report,
+            }
         except Exception as exc:
             logger.error("Ingest failed: %s", exc)
             job["error"] = str(exc)
@@ -333,19 +348,62 @@ def _limit_ingest(ip: str) -> None:
         _ingest_hits[ip] = hits
 
 
-def _diff_for_pr(pr_url: str) -> str:
-    import httpx
-
-    repo, number = parse_pr_url(pr_url)
-    response = httpx.get(
-        f"https://github.com/{repo}/pull/{number}.diff",
-        headers={"User-Agent": "rationale-guard"},
-        timeout=30,
-        follow_redirects=True,
+def _prune_jobs() -> None:
+    if len(_jobs) <= 40:
+        return
+    finished = sorted(
+        ((job.get("created") or 0, job_id) for job_id, job in _jobs.items() if job.get("done")),
+        key=lambda item: item[0],
     )
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Could not fetch PR diff: HTTP {response.status_code}")
-    return response.text
+    for _created, job_id in finished[: max(0, len(_jobs) - 40)]:
+        _jobs.pop(job_id, None)
+
+
+def _load_pr_snapshot(pr_url: str, progress: Any = None) -> tuple[dict[str, Any], str, str]:
+    """Merge a public PR into its repo graph. Corrections and superseded decisions stay."""
+    snapshot = snapshot_from_pr(pr_url, mode="auto", progress=progress)
+    graph = graph_name_for_repo(snapshot["repo"])
+    load_snapshot(_store(), snapshot, graph, reset=False)
+    _repo, number = parse_pr_url(pr_url)
+    diff = fetch_pr_diff(snapshot["repo"], number)
+    return snapshot, graph, diff
+
+
+def _ingest_pr(pr_url: str, request: Request) -> tuple[dict[str, Any], str, str]:
+    repo, number = parse_pr_url(pr_url)
+    graph = graph_name_for_repo(repo)
+    try:
+        already = _pr_loaded(_store(), graph, number)
+    except GraphError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not already:
+        _limit_ingest(request.client.host if request.client else "local")
+    try:
+        return _load_pr_snapshot(pr_url)
+    except GitHubError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _pr_loaded(store: Store, graph: str, number: int) -> bool:
+    try:
+        if store.ping(graph) == 0:
+            return False
+    except GraphError:
+        return False
+    rows, _trace = store.query(
+        graph,
+        "MATCH (p:PR {number: $number}) RETURN p.id AS id LIMIT 1",
+        {"number": int(number)},
+    )
+    return bool(rows)
+
+
+def _diff_for_pr(pr_url: str) -> str:
+    repo, number = parse_pr_url(pr_url)
+    try:
+        return fetch_pr_diff(repo, number)
+    except GitHubError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def _find_decision(store: Store, graph: str, question: str) -> str | None:

@@ -83,6 +83,17 @@ def reset_db() -> None:
     _db = None
 
 
+def repo_from_graph(name: str) -> str | None:
+    """Inverse of ``graph_name_for_repo`` when owner and name contain no sanitized characters."""
+    prefix = "rationale__"
+    if not name.startswith(prefix):
+        return None
+    owner, sep, repo = name[len(prefix):].partition("__")
+    if not sep or not owner or not repo:
+        return None
+    return f"{owner}/{repo}"
+
+
 def graph_name_for_repo(repo: str) -> str:
     if not repo or "/" not in repo:
         raise ValueError("repo must look like owner/name")

@@ -1,7 +1,9 @@
 name: rationale-guard
 
-# Runs only when the repository variable RATIONALE_API_URL is set, so forks and
-# this repo's CI stay quiet until you point the action at a deployment you own.
+# Prerequisites: set the repository variable RATIONALE_API_URL to a Rationale Guard
+# server that can reach FalkorDB. A pull request event builds or updates that
+# repo's graph, then posts one comment. /rationale commands require write access.
+# Forks stay quiet until the variable is set. Put GITHUB_TOKEN on the server too.
 on:
   pull_request:
     types: [opened, synchronize, reopened]

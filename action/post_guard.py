@@ -18,7 +18,10 @@ import urllib.request
 
 MARKER = "<!-- rationale-guard -->"
 API = "https://api.github.com"
-COMMAND = re.compile(r"(?im)^/rationale\s+(ack|override|wrong)\b[:\s]*(.*)$")
+COMMAND = re.compile(
+    r"(?im)^/rationale\s+(ack|override|wrong)(?:\s+(decision:[0-9a-fA-F]+))?\b[:\s]*(.*)$"
+)
+WRITE_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 
 def main() -> int:
@@ -49,13 +52,22 @@ def handle_comment(api_url: str, token: str, repository: str, event: dict) -> in
     if not number or "pull_request" not in issue:
         print("Command was not on a pull request.")
         return 0
-    kind, text = match.group(1), (match.group(2) or "").strip()
+    kind, decision_id, text = match.group(1), match.group(2), (match.group(3) or "").strip()
     if not text:
         print("A reason is required.", file=sys.stderr)
         return 1
     user = ((event.get("comment") or {}).get("user") or {}).get("login") or "unknown"
-    report = guard_pr(api_url, repository, int(number))
-    decision_id = _first_decision(report)
+    association = ((event.get("comment") or {}).get("author_association")) or ""
+    if not _can_write(token, repository, user, association):
+        _comment(
+            token,
+            repository,
+            int(number),
+            f"{MARKER}\n\n`/rationale {kind}` was ignored. Only repository collaborators with write access can change the graph.",
+        )
+        return 0
+    report = guard_pr(api_url, repository, int(number), ingest=True)
+    decision_id = decision_id or _first_decision(report)
     if not decision_id:
         _comment(token, repository, int(number), f"{MARKER}\n\nNo guarded decision was available to attach this {kind} to.")
         return 0
@@ -63,9 +75,9 @@ def handle_comment(api_url: str, token: str, repository: str, event: dict) -> in
         f"{api_url}/api/feedback",
         {"repo": repository, "decision_id": decision_id, "kind": kind, "text": text, "by": user, "pr": number},
     )
-    updated = guard_pr(api_url, repository, int(number))
+    updated = guard_pr(api_url, repository, int(number), ingest=False)
     _upsert_comment(token, repository, int(number), render(updated))
-    _check(token, repository, updated, event)
+    _check(token, repository, updated, event, int(number))
     return 0
 
 
@@ -74,16 +86,20 @@ def handle_pull(api_url: str, token: str, repository: str, event: dict) -> int:
     if not number:
         print("No pull request number in the event.", file=sys.stderr)
         return 1
-    report = guard_pr(api_url, repository, int(number))
+    report = guard_pr(api_url, repository, int(number), ingest=True)
     _upsert_comment(token, repository, int(number), render(report))
-    _check(token, repository, report, event)
+    _check(token, repository, report, event, int(number))
     return 0
 
 
-def guard_pr(api_url: str, repository: str, number: int) -> dict:
+def guard_pr(api_url: str, repository: str, number: int, ingest: bool = True) -> dict:
     return _post_json(
         f"{api_url}/api/guard",
-        {"repo": repository, "pr_url": f"https://github.com/{repository}/pull/{number}"},
+        {
+            "repo": repository,
+            "pr_url": f"https://github.com/{repository}/pull/{number}",
+            "ingest": ingest,
+        },
     )
 
 
@@ -120,7 +136,7 @@ def render(report: dict) -> str:
         row = learned_rows[0]
         lines.append(f"Learned from @{row.get('by')}: {row.get('kind')} superseded {row.get('decision_id')}.")
     lines.append("")
-    lines.append("Reply `/rationale ack|override|wrong <reason>` on this PR to update the graph.")
+    lines.append("Collaborators with write access can reply `/rationale ack|override|wrong <reason>`.")
     lines.append(f"Graph step: {report.get('graph_ms', '?')} ms. Judge: {report.get('judge', '?')}.")
     text = "\n".join(lines[:25])
     return text
@@ -128,12 +144,40 @@ def render(report: dict) -> str:
 
 def _first_decision(report: dict) -> str | None:
     findings = report.get("findings") or []
-    if findings:
-        return findings[0].get("decision_id")
+    contradicts = [item for item in findings if item.get("verdict") == "contradicts" and item.get("decision_id")]
+    if contradicts:
+        return contradicts[0]["decision_id"]
+    if findings and findings[0].get("decision_id"):
+        return findings[0]["decision_id"]
     learned = report.get("learned") or []
     if learned:
         return learned[0].get("decision_id")
     return None
+
+
+def event_head_sha(event: dict) -> str | None:
+    """PR-head SHA from the event. Issue comments do not carry it; do not substitute GITHUB_SHA."""
+    head = ((event.get("pull_request") or {}).get("head") or {})
+    if isinstance(head, dict) and head.get("sha"):
+        return head["sha"]
+    return None
+
+
+def association_can_write(association: str) -> bool:
+    return (association or "").upper() in WRITE_ASSOCIATIONS
+
+
+def _can_write(token: str, repository: str, login: str, association: str) -> bool:
+    if association_can_write(association):
+        return True
+    if not token or not login or login == "unknown":
+        return False
+    try:
+        data = _request("GET", f"/repos/{repository}/collaborators/{login}/permission", token)
+    except Exception as exc:
+        print(f"Permission lookup failed for {login}: {exc}", file=sys.stderr)
+        return False
+    return (data.get("permission") or "") in {"admin", "maintain", "write"}
 
 
 def _upsert_comment(token: str, repository: str, number: int, body: str) -> None:
@@ -152,11 +196,15 @@ def _comment(token: str, repository: str, number: int, body: str) -> None:
     _upsert_comment(token, repository, number, body)
 
 
-def _check(token: str, repository: str, report: dict, event: dict) -> None:
-    sha = (
-        ((event.get("pull_request") or {}).get("head") or {}).get("sha")
-        or os.environ.get("GITHUB_SHA")
-    )
+def _check(token: str, repository: str, report: dict, event: dict, number: int | None = None) -> None:
+    sha = event_head_sha(event)
+    if not sha and token and number:
+        try:
+            pr = _request("GET", f"/repos/{repository}/pulls/{number}", token)
+            sha = ((pr.get("head") or {}).get("sha")) or None
+        except Exception as exc:
+            print(f"Could not read PR head SHA: {exc}", file=sys.stderr)
+            sha = None
     if not token or not sha:
         return
     conclusion = "neutral"
@@ -181,7 +229,7 @@ def _post_json(url: str, payload: dict) -> dict:
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "rationale-guard"},
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
+    with urllib.request.urlopen(request, timeout=180) as response:
         return json.loads(response.read().decode())
 
 

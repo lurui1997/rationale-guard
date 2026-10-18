@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 async function readError(response) {
   const text = await response.text();
@@ -25,6 +25,9 @@ export default function App() {
   const [why, setWhy] = useState(null);
   const [learned, setLearned] = useState([]);
   const [openTrace, setOpenTrace] = useState("");
+  const [repo, setRepo] = useState("paperclipai/paperclip");
+  const [graph, setGraph] = useState("");
+  const [lastDiff, setLastDiff] = useState("");
 
   async function refreshHealth() {
     try {
@@ -46,12 +49,14 @@ export default function App() {
     refreshHealth();
     const timer = setInterval(refreshHealth, 8000);
     fetch("/api/samples").then((response) => response.json()).then((body) => setSamples(body.samples || [])).catch(() => setSamples([]));
-    refreshLearned();
+    refreshLearned("paperclipai/paperclip", "");
     return () => clearInterval(timer);
   }, []);
 
-  async function refreshLearned() {
-    const response = await fetch("/api/learned");
+  async function refreshLearned(nextRepo, nextGraph) {
+    const params = new URLSearchParams({ repo: nextRepo || repo });
+    if (nextGraph) params.set("graph", nextGraph);
+    const response = await fetch(`/api/learned?${params.toString()}`);
     if (!response.ok) return;
     const body = await response.json();
     setLearned(body.learned || []);
@@ -59,7 +64,15 @@ export default function App() {
 
   const offline = !health || health.falkordb !== true;
 
-  async function runGuard(nextDiff, nextUrl) {
+  function rememberReport(body) {
+    if (body.repo) setRepo(body.repo);
+    if (body.graph) setGraph(body.graph);
+    setReport(body);
+    refreshLearned(body.repo || repo, body.graph || graph);
+  }
+
+  async function runGuard(nextDiff, nextUrl, options = {}) {
+    const ingest = options.ingest !== undefined ? options.ingest : Boolean(nextUrl);
     setBusy(true);
     setError("");
     setWhy(null);
@@ -69,9 +82,11 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          repo: "paperclipai/paperclip",
+          repo,
+          graph: graph || undefined,
           diff: nextUrl ? "" : nextDiff,
           pr_url: nextUrl || undefined,
+          ingest,
           judge: "auto",
         }),
       });
@@ -79,8 +94,10 @@ export default function App() {
         setError(await readError(response));
         return;
       }
-      setReport(await response.json());
-      refreshLearned();
+      const body = await response.json();
+      setLastDiff(nextUrl ? "" : (nextDiff || ""));
+      rememberReport(body);
+      refreshHealth();
     } catch (err) {
       setError(err.message || "Guard failed");
     } finally {
@@ -93,7 +110,7 @@ export default function App() {
     const response = await fetch("/api/why", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo: "paperclipai/paperclip", decision_id: decisionId }),
+      body: JSON.stringify({ repo, graph: graph || undefined, decision_id: decisionId }),
     });
     if (!response.ok) {
       setWhy(null);
@@ -110,17 +127,23 @@ export default function App() {
     const response = await fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo: "paperclipai/paperclip", decision_id: decisionId, kind, text, by: "you" }),
+      body: JSON.stringify({
+        repo,
+        graph: graph || undefined,
+        decision_id: decisionId,
+        kind,
+        text,
+        by: "you",
+      }),
     });
     if (!response.ok) {
       setError(await readError(response));
       return;
     }
-    await refreshLearned();
-    if (diff.trim()) await runGuard(diff, "");
+    await refreshLearned(repo, graph);
+    if (diff.trim() || lastDiff.trim()) await runGuard(diff.trim() || lastDiff, "", { ingest: false });
+    else if (prUrl.trim()) await runGuard("", prUrl.trim(), { ingest: false });
   }
-
-  const trace = useMemo(() => report?.cypher_trace || [], [report]);
 
   return (
     <div className="app">
@@ -140,6 +163,29 @@ export default function App() {
       {error && <div className="banner">{error}</div>}
       <div className="layout">
         <section className="panel">
+          <label>Repository graph</label>
+          <select
+            value={graph}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (!next) {
+                setGraph("");
+                setRepo("paperclipai/paperclip");
+                refreshLearned("paperclipai/paperclip", "");
+                return;
+              }
+              const match = (health?.repos || []).find((item) => item.graph === next);
+              setGraph(next);
+              if (match?.repo) setRepo(match.repo);
+              refreshLearned(match?.repo || repo, next);
+            }}
+          >
+            <option value="">paperclipai/paperclip (seed)</option>
+            {(health?.repos || []).filter((item) => item.graph !== "rationale__paperclipai__paperclip").map((item) => (
+              <option key={item.graph} value={item.graph}>{item.repo || item.graph}</option>
+            ))}
+          </select>
+          <p className="meta">Pasted diffs use {repo}. A pull request URL builds or updates that repository's graph, then guards the diff.</p>
           <label>Diff or public pull request</label>
           <textarea value={diff} onChange={(event) => { setDiff(event.target.value); setActiveSample(""); setPrUrl(""); }} placeholder="Paste a unified diff" />
           <div className="row">
@@ -150,14 +196,22 @@ export default function App() {
               <button
                 key={sample.id}
                 className={activeSample === sample.id ? "chip active" : "chip"}
-                onClick={() => { setActiveSample(sample.id); setDiff(sample.diff); setPrUrl(""); }}
+                onClick={() => {
+                  setActiveSample(sample.id);
+                  setDiff(sample.diff);
+                  setPrUrl("");
+                  if (sample.repo) {
+                    setRepo(sample.repo);
+                    setGraph("");
+                  }
+                }}
               >
                 {sample.label === "violates" ? "Risky" : "Benign"}: {sample.title}
               </button>
             ))}
           </div>
-          <button className="primary" disabled={offline || busy || (!diff.trim() && !prUrl.trim())} onClick={() => runGuard(diff, prUrl.trim())}>
-            {busy ? "Guarding…" : "Guard this change"}
+          <button className="primary" disabled={offline || busy || (!diff.trim() && !prUrl.trim())} onClick={() => runGuard(diff, prUrl.trim(), { ingest: Boolean(prUrl.trim()) })}>
+            {busy ? (prUrl.trim() ? "Building graph and guarding…" : "Guarding…") : "Guard this change"}
           </button>
           {report && (
             <div style={{ marginTop: 18 }}>
@@ -191,7 +245,9 @@ export default function App() {
                     <button className="ghost" onClick={() => feedback(finding.decision_id, "override")}>Override</button>
                     <button className="ghost danger" onClick={() => feedback(finding.decision_id, "wrong")}>Wrong</button>
                   </div>
-                  {openTrace === finding.decision_id && <pre>{trace.map((step) => `-- ${step.name || "query"} (${step.ms} ms)\n${step.cypher}`).join("\n\n")}</pre>}
+                  {openTrace === finding.decision_id && (
+                    <pre>{(finding.cypher_trace || []).map((step) => `-- ${step.name || "query"} (${step.ms} ms)\n${step.cypher}`).join("\n\n") || "No query was recorded for this finding."}</pre>
+                  )}
                   {why && why.decision_id === finding.decision_id && (
                     <div className="why">
                       <p>{why.conclusion}</p>
@@ -217,7 +273,10 @@ export default function App() {
             </div>
           ))}
           <h3 style={{ marginTop: 22 }}>Active graphs</h3>
-          <p className="meta">{(health?.graphs || []).join(", ") || "—"}</p>
+          <p className="meta">{(health?.repos || []).map((item) => item.repo || item.graph).join(", ") || "—"}</p>
+          <h3 style={{ marginTop: 22 }}>From an agent</h3>
+          <p className="meta">MCP tools: guard_diff, why, who_knows, check_premises, record_feedback. Run <code>python3 -m rationale.mcp_server</code> from this repo with the package installed.</p>
+          <p className="meta">The GitHub Action posts one sticky comment when RATIONALE_API_URL is set. Only collaborators with write access can <code>/rationale override</code>.</p>
         </aside>
       </div>
     </div>
