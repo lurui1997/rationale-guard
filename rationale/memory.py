@@ -55,6 +55,9 @@ def record_correction(
             "MATCH (d:Decision {id: $id}) SET d.wrong_count = coalesce(d.wrong_count, 0) + 1",
             {"id": decision_id},
         )
+    from rationale.graphcache import invalidate
+
+    invalidate(graph)
     return {
         "id": correction_id,
         "kind": kind,

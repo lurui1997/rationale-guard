@@ -133,6 +133,15 @@ RULES: list[dict[str, Any]] = [
 ]
 
 
+def _rules_union() -> str:
+    """One round trip for every premise rule. Each row carries its rule id."""
+    parts = []
+    for rule in RULES:
+        body = rule["cypher"].strip().replace("RETURN d.id", f"RETURN '{rule['id']}' AS rule_id, d.id")
+        parts.append(body)
+    return "\nUNION\n".join(parts)
+
+
 def check_premises(store: Store, graph: str, decision_ids: list[str], now: int | None = None) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     import time
 
@@ -142,22 +151,32 @@ def check_premises(store: Store, graph: str, decision_ids: list[str], now: int |
     grouped: dict[str, list[dict[str, Any]]] = {decision_id: [] for decision_id in decision_ids}
     traces: list[dict[str, Any]] = []
     params = {"ids": decision_ids, "cutoff": cutoff}
-    for rule in RULES:
-        rows, trace = store.query(graph, rule["cypher"], params)
-        trace["name"] = rule["id"]
-        traces.append(trace)
-        for row in rows:
-            decision_id = row.get("decision_id")
-            if decision_id not in grouped:
-                continue
-            grouped[decision_id].append(
-                {
-                    "id": rule["id"],
-                    "severity": rule["severity"],
-                    "detail": row.get("detail") or "",
-                    "evidence": [item for item in (row.get("left_id"), row.get("right_id")) if item],
-                }
-            )
+    rows, trace = store.query(graph, _rules_union(), params)
+    trace["name"] = "premises"
+    traces.append(trace)
+    rule_by_id = {rule["id"]: rule for rule in RULES}
+    seen_rules: set[str] = set()
+    for row in rows:
+        rule = rule_by_id.get(row.get("rule_id") or "")
+        if rule is None:
+            continue
+        if rule["id"] not in seen_rules:
+            seen_rules.add(rule["id"])
+            named = dict(trace)
+            named["name"] = rule["id"]
+            named["cypher"] = rule["cypher"].strip()
+            traces.append(named)
+        decision_id = row.get("decision_id")
+        if decision_id not in grouped:
+            continue
+        grouped[decision_id].append(
+            {
+                "id": rule["id"],
+                "severity": rule["severity"],
+                "detail": row.get("detail") or "",
+                "evidence": [item for item in (row.get("left_id"), row.get("right_id")) if item],
+            }
+        )
     summary: dict[str, dict[str, Any]] = {}
     for decision_id, hits in grouped.items():
         stale = [hit for hit in hits if hit["severity"] in {"warning", "high"}]

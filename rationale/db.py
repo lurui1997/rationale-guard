@@ -183,15 +183,20 @@ class Store:
 
     def delete_graph(self, name: str) -> None:
         try:
-            self.graph(name).delete()
-        except Exception as exc:
-            message = str(exc).lower()
-            if "invalid graph operation" in message or "no such graph" in message or "empty key" in message:
-                return
-            # FalkorDB raises when the key is absent. Surface anything else.
-            if "does not exist" in message or "unknown graph" in message:
-                return
-            raise GraphError(f"FalkorDB delete failed: {exc}") from exc
+            try:
+                self.graph(name).delete()
+            except Exception as exc:
+                message = str(exc).lower()
+                if "invalid graph operation" in message or "no such graph" in message or "empty key" in message:
+                    return
+                # FalkorDB raises when the key is absent. Surface anything else.
+                if "does not exist" in message or "unknown graph" in message:
+                    return
+                raise GraphError(f"FalkorDB delete failed: {exc}") from exc
+        finally:
+            from rationale.graphcache import invalidate
+
+            invalidate(name)
 
     def list_graphs(self) -> list[str]:
         try:

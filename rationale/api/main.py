@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 import uuid
@@ -21,6 +22,7 @@ from pydantic import BaseModel
 
 from rationale.db import GraphError, Store, graph_name_for_repo, repo_from_graph, reset_db
 from rationale.explain import why
+from rationale.graphcache import run_parallel
 from rationale.guard import run_guard
 from rationale.ingest.github_api import GitHubError, fetch_pr_diff
 from rationale.ingest.load import load_json, load_snapshot
@@ -32,6 +34,35 @@ from rationale.settings import repo_root
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+_seed_status = {"state": "loading"}
+_DB_LOCATION = re.compile(
+    r"(?:rediss?|falkors?)://\S+"
+    r"|\b\d{1,3}(?:\.\d{1,3}){3}:\d+\b"
+    r"|\b(?:localhost|[\w.-]+\.[\w.-]+):\d{2,5}\b",
+    re.IGNORECASE,
+)
+
+
+def graph_client_message(exc: BaseException) -> str:
+    """Log the driver error. Callers only ever show a fixed sentence."""
+    logger.error("Graph unavailable: %s", exc)
+    return "graph unavailable"
+
+
+def redact_client_text(text: str) -> str:
+    raw = text or ""
+    lowered = raw.lower()
+    if _DB_LOCATION.search(raw) or "falkordb" in lowered:
+        return "graph unavailable"
+    if "redis" in lowered and re.search(r":\d{2,5}", raw):
+        return "graph unavailable"
+    return raw
+
+
+def visible_repos(repos: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Graphs with no decisions are not choices on the guard screen."""
+    return [item for item in repos if int(item.get("decisions") or 0) > 0]
 
 _cache: dict[str, dict[str, Any]] = {}
 _jobs: dict[str, dict[str, Any]] = {}
@@ -104,12 +135,18 @@ def ensure_seed(store: Store | None = None) -> None:
     load_snapshot(store, snapshot, graph, reset=False)
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
+def _load_seed_background() -> None:
     try:
         ensure_seed()
+        _seed_status["state"] = "ready"
     except Exception as exc:
         logger.error("Startup seed load failed: %s", exc)
+        _seed_status["state"] = "error"
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    threading.Thread(target=_load_seed_background, name="seed-load", daemon=True).start()
     yield
 
 
@@ -122,28 +159,60 @@ app.add_middleware(
 )
 
 
+def _decision_counts(store: Store, names: list[str]) -> list[dict[str, Any]]:
+    def count(name: str) -> dict[str, Any]:
+        try:
+            rows, _trace = store.query(
+                name,
+                "MATCH (d:Decision) WHERE coalesce(d.extractor, '') <> 'correction' RETURN count(d) AS n",
+            )
+            decisions = int(rows[0]["n"]) if rows else 0
+        except GraphError as exc:
+            logger.error("Decision count failed for %s: %s", name, exc)
+            decisions = 0
+        return {"graph": name, "repo": repo_from_graph(name), "decisions": decisions}
+
+    if not names:
+        return []
+    counted = run_parallel([(name, lambda name=name: count(name)) for name in names])
+    return [counted[name] for name in names]
+
+
 @app.get("/api/health")
 def health(graph: str | None = None) -> dict[str, Any]:
+    loading = _seed_status["state"] == "loading"
     try:
         store = _store()
         target = graph or graph_name_for_repo("paperclipai/paperclip")
-        nodes = store.ping(target)
-        edge_rows, _trace = store.query(target, "MATCH ()-[r]->() RETURN count(r) AS edges")
-        edges = int(edge_rows[0]["edges"]) if edge_rows else 0
-        names = [name for name in store.list_graphs() if name.startswith("rationale__")]
-        repos = [{"graph": name, "repo": repo_from_graph(name)} for name in names]
+
+        def nodes() -> int:
+            return store.ping(target)
+
+        def edges() -> int:
+            edge_rows, _trace = store.query(target, "MATCH ()-[r]->() RETURN count(r) AS edges")
+            return int(edge_rows[0]["edges"]) if edge_rows else 0
+
+        def repos() -> list[dict[str, Any]]:
+            names = [name for name in store.list_graphs() if name.startswith("rationale__")]
+            return visible_repos(_decision_counts(store, names))
+
+        parts = run_parallel([("nodes", nodes), ("edges", edges), ("repos", repos)])
         return {
             "ok": True,
             "falkordb": True,
+            "loading": loading,
             "graph": target,
-            "nodes": nodes,
-            "edges": edges,
-            "graphs": names,
-            "repos": repos,
+            "nodes": parts["nodes"],
+            "edges": parts["edges"],
+            "graphs": [item["graph"] for item in parts["repos"]],
+            "repos": parts["repos"],
         }
     except Exception as exc:
         logger.error("Health check failed: %s", exc)
-        raise HTTPException(status_code=503, detail={"ok": False, "falkordb": False, "error": str(exc)}) from exc
+        raise HTTPException(
+            status_code=503,
+            detail={"ok": False, "falkordb": False, "loading": loading, "error": "graph unavailable"},
+        ) from exc
 
 
 @app.get("/api/graphs")
@@ -151,7 +220,7 @@ def graphs() -> dict[str, Any]:
     try:
         names = [name for name in _store().list_graphs() if name.startswith("rationale__")]
     except GraphError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     return {"graphs": names}
 
 
@@ -180,7 +249,7 @@ def guard(body: GuardBody, request: Request) -> dict[str, Any]:
                 snapshot, built_graph, diff = _ingest_pr(body.pr_url, request)
             except GraphError as exc:
                 logger.error("Ingest graph error: %s", exc)
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
+                raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
             repo = snapshot["repo"]
         elif not diff.strip():
             diff = _diff_for_pr(body.pr_url)
@@ -192,7 +261,7 @@ def guard(body: GuardBody, request: Request) -> dict[str, Any]:
         node_count = store.ping(graph)
     except GraphError as exc:
         logger.error("Guard refused because FalkorDB is unavailable: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     key = hashlib.sha256(f"{graph}|{body.judge}|{source_pr}|{node_count}|{diff}".encode()).hexdigest()
     cached = _cache.get(key)
     if cached and cached.get("node_count") == node_count and not cached["value"].get("error"):
@@ -207,7 +276,7 @@ def guard(body: GuardBody, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except GraphError as exc:
         logger.error("Guard graph error: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     report["from_cache"] = False
@@ -229,7 +298,7 @@ def ask_why(body: WhyBody) -> dict[str, Any]:
         raise
     except GraphError as exc:
         logger.error("Why failed: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -240,7 +309,7 @@ def feedback(body: FeedbackBody) -> dict[str, Any]:
     try:
         result = record_correction(_store(), graph, body.decision_id, body.kind, body.text, body.by, body.pr)
     except GraphError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _cache.clear()
@@ -253,7 +322,7 @@ def learned(repo: str = "paperclipai/paperclip", graph: str | None = None) -> di
     try:
         rows, trace = list_corrections(_store(), target)
     except GraphError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     return {"learned": rows, "cypher_trace": [trace]}
 
 
@@ -265,7 +334,7 @@ def who(body: WhoBody) -> dict[str, Any]:
     try:
         people, traces = experts_for_paths(_store(), graph, [body.path])
     except GraphError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     return {"ask": people, "cypher_trace": traces}
 
 
@@ -305,7 +374,7 @@ def ingest(body: IngestBody, request: Request) -> dict[str, Any]:
             }
         except Exception as exc:
             logger.error("Ingest failed: %s", exc)
-            job["error"] = str(exc)
+            job["error"] = redact_client_text(str(exc))
         finally:
             job["done"] = True
             job["events"].append({"step": "done", "error": job["error"]})
@@ -348,7 +417,7 @@ async def mcp(request: Request) -> dict[str, Any]:
     try:
         return mcp_http(payload)
     except GraphError as exc:
-        return {"jsonrpc": "2.0", "id": payload.get("id"), "error": {"code": -32000, "message": str(exc)}}
+        return {"jsonrpc": "2.0", "id": payload.get("id"), "error": {"code": -32000, "message": graph_client_message(exc)}}
 
 
 def _limit_ingest(ip: str) -> None:
@@ -388,7 +457,7 @@ def _ingest_pr(pr_url: str, request: Request) -> tuple[dict[str, Any], str, str]
     try:
         already = _pr_loaded(_store(), graph, number)
     except GraphError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        raise HTTPException(status_code=503, detail=graph_client_message(exc)) from exc
     if not already:
         _limit_ingest(request.client.host if request.client else "local")
     try:

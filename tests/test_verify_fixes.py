@@ -397,3 +397,73 @@ def test_inactive_owner_without_github_evidence_is_unknown(store):
     assert "R6_owner_inactive" not in ids
     assert "R6_activity_unknown" in ids
     store.delete_graph(name)
+
+
+def test_visible_repos_skip_empty_graphs():
+    from rationale.api.main import redact_client_text, visible_repos
+
+    kept = visible_repos(
+        [
+            {"graph": "rationale__empty__repo", "decisions": 0},
+            {"graph": "rationale__kept__repo", "decisions": 4},
+        ]
+    )
+    assert [item["graph"] for item in kept] == ["rationale__kept__repo"]
+    leaked = "Error 111 connecting to secret.db.internal:6379"
+    assert redact_client_text(leaked) == "graph unavailable"
+    assert "6379" not in redact_client_text("redis://secret.db.internal:6379/0")
+    assert redact_client_text("Provide a unified diff or a public PR URL.") == "Provide a unified diff or a public PR URL."
+
+
+def test_health_hides_db_host(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from rationale.api import main
+    from rationale.db import GraphError
+
+    main._seed_status["state"] = "ready"
+
+    class Boom:
+        def ping(self, _name):
+            raise GraphError("Error 111 connecting to secret.db.internal:6379.")
+
+        def query(self, *_args, **_kwargs):
+            raise GraphError("Error 111 connecting to secret.db.internal:6379.")
+
+        def list_graphs(self):
+            raise GraphError("Error 111 connecting to secret.db.internal:6379.")
+
+    monkeypatch.setattr(main, "_store", lambda: Boom())
+    with TestClient(main.app) as client:
+        response = client.get("/api/health")
+    assert response.status_code == 503
+    assert "6379" not in response.text
+    assert "secret.db.internal" not in response.text
+    assert "graph unavailable" in response.text
+
+
+def test_second_guard_reuses_cached_graph_data(store, monkeypatch):
+    from rationale.graphcache import invalidate
+
+    name = "rationale_test_cache"
+    load_snapshot(store, _mini(), name, reset=True)
+    invalidate(name)
+    real = store.query
+    calls: list[str] = []
+
+    def wrapped(graph, cypher, params=None, timeout=None):
+        calls.append(cypher)
+        return real(graph, cypher, params, timeout)
+
+    monkeypatch.setattr(store, "query", wrapped)
+    run_guard(store, "example/guard", RISKY, graph=name, judge="offline")
+    first = len(calls)
+    calls.clear()
+    report = run_guard(store, "example/guard", RISKY, graph=name, judge="offline")
+    blob = "\n".join(calls).lower()
+    assert report["status"] == "warn"
+    assert len(calls) < first
+    assert "pagerank" not in blob
+    assert "betweenness" not in blob
+    assert "query_name" not in blob
+    store.delete_graph(name)

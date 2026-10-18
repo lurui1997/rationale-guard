@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from rationale.db import GraphError, Store
+from rationale.graphcache import get_cached, run_parallel
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,23 @@ def _try_calls(store: Store, graph: str, statements: list[str], name: str) -> tu
     return [], trace
 
 
+def _load_ranks(store: Store, graph: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    loaded = run_parallel(
+        [
+            ("pagerank", lambda: _try_calls(store, graph, PAGERANK, "pagerank")),
+            ("between", lambda: _try_calls(store, graph, BETWEENNESS, "betweenness")),
+        ]
+    )
+    ranked, pagerank_trace = loaded["pagerank"]
+    between, between_trace = loaded["between"]
+    return ranked, between, [pagerank_trace, between_trace]
+
+
+def cached_ranks(store: Store, graph: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """PageRank and betweenness are properties of the graph, not of one diff."""
+    return get_cached(graph, "ranks", lambda: _load_ranks(store, graph))
+
+
 def experts_for_paths(store: Store, graph: str, paths: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     traces: list[dict[str, Any]] = []
     if not paths:
@@ -76,10 +94,9 @@ def experts_for_paths(store: Store, graph: str, paths: list[str]) -> tuple[list[
     traces.append(local_trace)
     local = {row["login"] for row in local_rows if row.get("login")}
 
-    ranked, pagerank_trace = _try_calls(store, graph, PAGERANK, "pagerank")
-    traces.append(pagerank_trace)
-    between, between_trace = _try_calls(store, graph, BETWEENNESS, "betweenness")
-    traces.append(between_trace)
+    ranked, between, rank_traces = cached_ranks(store, graph)
+    traces.extend(rank_traces)
+    pagerank_trace = next((item for item in rank_traces if item.get("name") == "pagerank"), {})
     between_scores = {row["login"]: row.get("score") for row in between if row.get("login")}
 
     algorithm = "pagerank"

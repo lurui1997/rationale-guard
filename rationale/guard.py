@@ -12,7 +12,8 @@ from typing import Any
 
 from rationale.db import Store, graph_name_for_repo
 from rationale.diffutil import ParsedDiff, parse_diff
-from rationale.experts import experts_for_paths
+from rationale.experts import cached_ranks, experts_for_paths
+from rationale.graphcache import get_cached, run_parallel
 from rationale.ingest.extract import is_scope_note
 from rationale.judge import JudgeError, _content_overlap, judge_candidates, resolve_judge_mode
 from rationale.premises import check_premises
@@ -170,6 +171,33 @@ def select_top(
     return chosen
 
 
+def decision_index_cypher() -> str:
+    """Every decision-to-file hop, unfiltered. Callers keep the rows that match a diff."""
+    parts = []
+    for name, cypher in list(CANDIDATE_QUERIES) + [SYMBOL_QUERY]:
+        text = cypher.strip().replace("WHERE f.path IN $paths", "WHERE true")
+        text = text.replace(
+            "AND any(sym IN d.symbols WHERE sym IN $symbols)",
+            "AND size(coalesce(d.symbols, [])) > 0",
+        )
+        parts.append(text + f", '{name}' AS query_name")
+    return "\nUNION\n".join(parts)
+
+
+def _rows_for_diff(rows: list[dict[str, Any]], paths: set[str], symbols: set[str]) -> list[dict[str, Any]]:
+    kept = []
+    for row in rows:
+        if row.get("query_name") == "decision_via_symbol" or row.get("hop") == "symbol":
+            row_symbols = row.get("symbols") or []
+            if symbols and any(symbol in symbols for symbol in row_symbols):
+                kept.append(row)
+            continue
+        path = row.get("path") or ""
+        if path and path in paths:
+            kept.append(row)
+    return kept
+
+
 def _hunk_text(parsed: ParsedDiff) -> str:
     chunks = []
     for item in parsed.files:
@@ -193,55 +221,75 @@ def run_guard(
     traces: list[dict[str, Any]] = []
     started = time.perf_counter()
     grouped: dict[str, dict[str, Any]] = {}
-    params = {"paths": parsed.paths or ["__none__"], "symbols": parsed.symbols() or ["__none__"]}
-    queries = list(CANDIDATE_QUERIES)
-    if parsed.symbols():
-        queries.append(SYMBOL_QUERY)
-    for name, cypher in queries:
-        rows, trace = store.query(graph_name, cypher, params)
-        trace["name"] = name
-        traces.append(trace)
-        for row in rows:
-            decision_id = row.get("decision_id")
-            if not decision_id:
-                continue
-            quote = row.get("quote") or ""
-            summary = row.get("summary") or ""
-            if (row.get("status") or "") == "scope" or is_scope_note(quote) or is_scope_note(summary):
-                continue
-            if source_pr and (row.get("extracted_from") or "") == f"pr:{int(source_pr)}":
-                continue
-            bucket = grouped.setdefault(
-                decision_id,
-                {
-                    "id": decision_id,
-                    "summary": row.get("summary") or "",
-                    "source_quote": row.get("quote") or "",
-                    "source_url": row.get("source_url") or "",
-                    "status": row.get("status") or "accepted",
-                    "confidence": row.get("confidence") or 0,
-                    "rationale": row.get("rationale") or "",
-                    "wrong_count": int(row.get("wrong_count") or 0),
-                    "symbols": row.get("symbols") or [],
-                    "extracted_from": row.get("extracted_from") or "",
-                    "paths": [],
-                    "hops": [],
-                    "vias": [],
-                    "queries": [],
-                },
-            )
-            if name not in bucket["queries"]:
-                bucket["queries"].append(name)
-            path = row.get("path") or ""
-            if path and path not in bucket["paths"]:
-                bucket["paths"].append(path)
-            hop = row.get("hop")
-            if hop and hop not in bucket["hops"]:
-                bucket["hops"].append(hop)
-            if row.get("via_id"):
-                bucket["vias"].append({"id": row.get("via_id"), "number": row.get("via_number"), "hop": hop})
-
+    path_set = set(parsed.paths)
     symbol_set = set(parsed.symbols())
+    params = {"paths": parsed.paths or ["__none__"], "symbols": parsed.symbols() or ["__none__"]}
+
+    def _load_index() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        loaded_rows, loaded_trace = store.query(graph_name, decision_index_cypher())
+        loaded_trace["name"] = "decision_index"
+        return loaded_rows, loaded_trace
+
+    with_index = run_parallel(
+        [
+            ("index", lambda: get_cached(graph_name, "decisions", _load_index)),
+            ("ranks", lambda: cached_ranks(store, graph_name)),
+        ]
+    )
+    rows, index_trace = with_index["index"]
+    matched = _rows_for_diff(rows, path_set, symbol_set)
+    seen_names = []
+    for row in matched:
+        query_name = row.get("query_name") or "decision_index"
+        if query_name not in seen_names:
+            seen_names.append(query_name)
+    if not seen_names:
+        seen_names = ["decision_index"]
+    for query_name in seen_names:
+        named = dict(index_trace)
+        named["name"] = query_name
+        traces.append(named)
+    for row in matched:
+        name = row.get("query_name") or "decision_index"
+        decision_id = row.get("decision_id")
+        if not decision_id:
+            continue
+        quote = row.get("quote") or ""
+        summary = row.get("summary") or ""
+        if (row.get("status") or "") == "scope" or is_scope_note(quote) or is_scope_note(summary):
+            continue
+        if source_pr and (row.get("extracted_from") or "") == f"pr:{int(source_pr)}":
+            continue
+        bucket = grouped.setdefault(
+            decision_id,
+            {
+                "id": decision_id,
+                "summary": row.get("summary") or "",
+                "source_quote": row.get("quote") or "",
+                "source_url": row.get("source_url") or "",
+                "status": row.get("status") or "accepted",
+                "confidence": row.get("confidence") or 0,
+                "rationale": row.get("rationale") or "",
+                "wrong_count": int(row.get("wrong_count") or 0),
+                "symbols": row.get("symbols") or [],
+                "extracted_from": row.get("extracted_from") or "",
+                "paths": [],
+                "hops": [],
+                "vias": [],
+                "queries": [],
+            },
+        )
+        if name not in bucket["queries"]:
+            bucket["queries"].append(name)
+        path = row.get("path") or ""
+        if path and path not in bucket["paths"]:
+            bucket["paths"].append(path)
+        hop = row.get("hop")
+        if hop and hop not in bucket["hops"]:
+            bucket["hops"].append(hop)
+        if row.get("via_id"):
+            bucket["vias"].append({"id": row.get("via_id"), "number": row.get("via_number"), "hop": hop})
+
     hunks = _hunk_text(parsed)
     prepared = []
     for bucket in grouped.values():
@@ -258,20 +306,33 @@ def run_guard(
         prepared.append(bucket)
     chosen = select_top(prepared)
     ids = [item["id"] for item in chosen]
-    premises, premise_traces = check_premises(store, graph_name, ids)
-    traces.extend(premise_traces)
-    alternatives = _alternatives(store, graph_name, ids, traces)
-    corrections = _corrections(store, graph_name, ids, traces)
-    learned_rows, learned_trace = store.query(graph_name, LEARNED_QUERY, {"paths": params["paths"]})
-    learned_trace["name"] = "learned_overrides"
-    traces.append(learned_trace)
     diff_paths = list(parsed.paths)
     touched = list(diff_paths)
     for item in chosen:
         for path in item["paths"]:
             if path and path not in touched:
                 touched.append(path)
-    ask, expert_traces = experts_for_paths(store, graph_name, touched[:30])
+    alt_traces: list[dict[str, Any]] = []
+    correction_traces: list[dict[str, Any]] = []
+    follow = run_parallel(
+        [
+            ("premises", lambda: check_premises(store, graph_name, ids)),
+            ("alts", lambda: _alternatives(store, graph_name, ids, alt_traces)),
+            ("corrections", lambda: _corrections(store, graph_name, ids, correction_traces)),
+            ("learned", lambda: store.query(graph_name, LEARNED_QUERY, {"paths": params["paths"]})),
+            ("experts", lambda: experts_for_paths(store, graph_name, touched[:30])),
+        ]
+    )
+    premises, premise_traces = follow["premises"]
+    traces.extend(premise_traces)
+    alternatives = follow["alts"]
+    traces.extend(alt_traces)
+    corrections = follow["corrections"]
+    traces.extend(correction_traces)
+    learned_rows, learned_trace = follow["learned"]
+    learned_trace["name"] = "learned_overrides"
+    traces.append(learned_trace)
+    ask, expert_traces = follow["experts"]
     traces.extend(expert_traces)
     graph_ms = round((time.perf_counter() - started) * 1000, 2)
     trace_by_name = _dedupe_traces(traces)

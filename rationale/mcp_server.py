@@ -7,6 +7,7 @@ Graph errors are returned as tool errors. They are not rewritten as empty findin
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from typing import Any
 
@@ -17,6 +18,8 @@ from rationale.guard import run_guard
 from rationale.judge import JudgeError
 from rationale.memory import record_correction
 from rationale.premises import check_premises
+
+logger = logging.getLogger(__name__)
 
 TOOLS = [
     {
@@ -103,7 +106,13 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
         try:
             payload = call_tool(params.get("name"), params.get("arguments") or {})
             return _result(msg_id, {"content": [{"type": "text", "text": json.dumps(payload, indent=2)}], "isError": False})
-        except (GraphError, JudgeError, ValueError) as exc:
+        except GraphError as exc:
+            logger.error("Graph unavailable: %s", exc)
+            return _result(
+                msg_id,
+                {"content": [{"type": "text", "text": "graph unavailable"}], "isError": True},
+            )
+        except (JudgeError, ValueError) as exc:
             return _result(
                 msg_id,
                 {"content": [{"type": "text", "text": str(exc)}], "isError": True},

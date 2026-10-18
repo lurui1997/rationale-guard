@@ -1,14 +1,21 @@
 import { useEffect, useState } from "react";
 
+function hideDbLocation(text) {
+  const raw = String(text || "");
+  if (/rediss?:\/\/|falkors?:\/\/|falkordb|\b\d{1,3}(?:\.\d{1,3}){3}:\d+|\b(?:localhost|[\w.-]+\.[\w.-]+):\d{2,5}/i.test(raw)) return "graph unavailable";
+  if (/redis/i.test(raw) && /:\d{2,5}/.test(raw)) return "graph unavailable";
+  return raw;
+}
+
 async function readError(response) {
   const text = await response.text();
   try {
     const body = JSON.parse(text);
-    if (typeof body.detail === "string") return body.detail;
-    if (body.detail && body.detail.error) return body.detail.error;
-    return JSON.stringify(body.detail || body);
+    if (typeof body.detail === "string") return hideDbLocation(body.detail);
+    if (body.detail && body.detail.error) return hideDbLocation(body.detail.error);
+    return hideDbLocation(JSON.stringify(body.detail || body));
   } catch {
-    return text || `HTTP ${response.status}`;
+    return hideDbLocation(text || `HTTP ${response.status}`);
   }
 }
 
@@ -45,7 +52,7 @@ export default function App() {
       setHealthError("");
     } catch (err) {
       setHealth(null);
-      setHealthError(err.message || "Graph offline");
+      setHealthError(hideDbLocation(err.message || "Graph offline"));
     }
   }
 
@@ -56,9 +63,9 @@ export default function App() {
 
   useEffect(() => {
     refreshHealth(graph);
-    const timer = setInterval(() => refreshHealth(graph), 8000);
+    const timer = setInterval(() => refreshHealth(graph), health?.loading ? 2000 : 8000);
     return () => clearInterval(timer);
-  }, [graph]);
+  }, [graph, health?.loading]);
 
   async function refreshLearned(nextRepo, nextGraph) {
     const params = new URLSearchParams({ repo: nextRepo || repo });
@@ -70,6 +77,7 @@ export default function App() {
   }
 
   const offline = !health || health.falkordb !== true;
+  const loading = Boolean(health?.loading);
 
   function rememberReport(body) {
     if (body.repo) setRepo(body.repo);
@@ -167,10 +175,11 @@ export default function App() {
           </p>
         </div>
         <div className={offline ? "health off" : "health on"}>
-          <strong>{offline ? "Graph offline" : "Graph online"}</strong>
-          <span>{health ? `${health.graph} · ${health.nodes} nodes · ${health.edges ?? 0} edges` : healthError || "Checking FalkorDB"}</span>
+          <strong>{loading ? "Loading seed" : offline ? "Graph offline" : "Graph online"}</strong>
+          <span>{health ? `${health.graph} · ${loading ? "loading" : `${health.nodes} nodes · ${health.edges ?? 0} edges`}` : healthError || "Checking FalkorDB"}</span>
         </div>
       </header>
+      {loading && <div className="banner">Loading the paperclip seed. The guard starts when that graph is ready.</div>}
       {offline && <div className="banner">Graph offline — retrying. Submit stays disabled until FalkorDB answers a real count query.</div>}
       {error && <div className="banner">{error}</div>}
       <div className="layout">
@@ -193,7 +202,7 @@ export default function App() {
             }}
           >
             <option value="">paperclipai/paperclip (seed)</option>
-            {(health?.repos || []).filter((item) => item.graph !== "rationale__paperclipai__paperclip").map((item) => (
+            {(health?.repos || []).filter((item) => item.graph !== "rationale__paperclipai__paperclip" && (item.decisions ?? 0) > 0).map((item) => (
               <option key={item.graph} value={item.graph}>{item.repo || item.graph}</option>
             ))}
           </select>
@@ -224,7 +233,7 @@ export default function App() {
               </button>
             ))}
           </div>
-          <button className="primary" disabled={offline || busy || (!diff.trim() && !prUrl.trim())} onClick={() => runGuard(diff, prUrl.trim(), { ingest: Boolean(prUrl.trim()) })}>
+          <button className="primary" disabled={offline || loading || busy || (!diff.trim() && !prUrl.trim())} onClick={() => runGuard(diff, prUrl.trim(), { ingest: Boolean(prUrl.trim()) })}>
             {busy ? (prUrl.trim() ? "Building graph and guarding…" : "Guarding…") : "Guard this change"}
           </button>
           {report && (

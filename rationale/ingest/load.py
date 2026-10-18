@@ -417,6 +417,9 @@ def load_snapshot(store: Store, snapshot: dict[str, Any], graph: str, reset: boo
     _write_collaboration(store, graph)
     counts["writes"] = counts["nodes"]
     counts["nodes"] = store.ping(graph)
+    from rationale.graphcache import invalidate
+
+    invalidate(graph)
     logger.info("Loaded graph %s (%s)", graph, counts)
     return counts
 
