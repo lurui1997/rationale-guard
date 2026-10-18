@@ -8,6 +8,8 @@ It is a submission for WeMakeDevs x FalkorDB **Graph Hacks: Context for AI Agent
 
 Live: [https://rationale-guard-production.up.railway.app](https://rationale-guard-production.up.railway.app)
 
+![Guard warns on a cost-null-to-zero diff](docs/img/guard.gif)
+
 - Press a sample button. "Treat unknown adapter cost as zero" is the diff that should warn.
 - Or paste a public pull request, for example [https://github.com/Kludex/starlette/pull/3651](https://github.com/Kludex/starlette/pull/3651). The first visit builds that repository's graph, then guards the diff.
 
@@ -53,6 +55,10 @@ Coding agents can see the current file and not the decision that put it there. R
 On the paperclip seed, PR [#14991](https://github.com/paperclipai/paperclip/pull/14991) records this decision: "Preserve explicit zero prices and missing prices as distinct states." A diff that collapses a missing adapter price contradicts that quote. The premise holds because the PR says `Refs #14548`, and [issue #14548](https://github.com/paperclipai/paperclip/issues/14548) is still open. PageRank on the person–file graph asks @devinfoley. A collaborator with write access can reply `/rationale override: billing now normalizes upstream`. The old decision is marked superseded, the override note is not a decision the judge can contradict, and the next guard — offline or LLM — stands down.
 
 The seeded demo is [paperclipai/paperclip](https://github.com/paperclipai/paperclip), limited to cost accounting, idle sleep, and MCP access. Paste any other public PR URL on the Guard screen, or let the GitHub Action run. The server merges that repository's history into `rationale__<owner>__<repo>` (at most 30 PRs) and then guards the diff. A second ingest updates the same graph. It does not delete `Correction` nodes.
+
+## AI assistance disclosure
+
+This project was built primarily with AI coding assistants (Cursor cloud agents). A human directed product positioning, track strategy, verification, and eval. The author can explain the graph model, the Cypher rules R1–R7, the MCP surface, and the architecture. Graph Hacks requires this disclosure.
 
 ## Why a graph, not RAG
 
