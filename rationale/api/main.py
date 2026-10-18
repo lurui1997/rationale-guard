@@ -123,14 +123,24 @@ app.add_middleware(
 
 
 @app.get("/api/health")
-def health() -> dict[str, Any]:
+def health(graph: str | None = None) -> dict[str, Any]:
     try:
         store = _store()
-        graph = graph_name_for_repo("paperclipai/paperclip")
-        nodes = store.ping(graph)
+        target = graph or graph_name_for_repo("paperclipai/paperclip")
+        nodes = store.ping(target)
+        edge_rows, _trace = store.query(target, "MATCH ()-[r]->() RETURN count(r) AS edges")
+        edges = int(edge_rows[0]["edges"]) if edge_rows else 0
         names = [name for name in store.list_graphs() if name.startswith("rationale__")]
         repos = [{"graph": name, "repo": repo_from_graph(name)} for name in names]
-        return {"ok": True, "falkordb": True, "graph": graph, "nodes": nodes, "graphs": names, "repos": repos}
+        return {
+            "ok": True,
+            "falkordb": True,
+            "graph": target,
+            "nodes": nodes,
+            "edges": edges,
+            "graphs": names,
+            "repos": repos,
+        }
     except Exception as exc:
         logger.error("Health check failed: %s", exc)
         raise HTTPException(status_code=503, detail={"ok": False, "falkordb": False, "error": str(exc)}) from exc
@@ -157,20 +167,22 @@ def guard(body: GuardBody, request: Request) -> dict[str, Any]:
     diff = body.diff or ""
     repo = body.repo
     built_graph: str | None = None
-    if body.pr_url and not diff.strip():
+    source_pr: int | None = None
+    if body.pr_url:
         try:
-            parsed_repo, _number = parse_pr_url(body.pr_url)
+            parsed_repo, source_pr = parse_pr_url(body.pr_url)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        repo = parsed_repo
-        if body.ingest is not False:
+        if not diff.strip():
+            repo = parsed_repo
+        if not diff.strip() and body.ingest is not False:
             try:
                 snapshot, built_graph, diff = _ingest_pr(body.pr_url, request)
             except GraphError as exc:
                 logger.error("Ingest graph error: %s", exc)
                 raise HTTPException(status_code=503, detail=str(exc)) from exc
             repo = snapshot["repo"]
-        else:
+        elif not diff.strip():
             diff = _diff_for_pr(body.pr_url)
     if not diff.strip():
         raise HTTPException(status_code=400, detail="Provide a unified diff or a public PR URL.")
@@ -181,7 +193,7 @@ def guard(body: GuardBody, request: Request) -> dict[str, Any]:
     except GraphError as exc:
         logger.error("Guard refused because FalkorDB is unavailable: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    key = hashlib.sha256(f"{graph}|{body.judge}|{node_count}|{diff}".encode()).hexdigest()
+    key = hashlib.sha256(f"{graph}|{body.judge}|{source_pr}|{node_count}|{diff}".encode()).hexdigest()
     cached = _cache.get(key)
     if cached and cached.get("node_count") == node_count and not cached["value"].get("error"):
         payload = dict(cached["value"])
@@ -189,7 +201,7 @@ def guard(body: GuardBody, request: Request) -> dict[str, Any]:
         payload["from_cache"] = True
         return payload
     try:
-        report = run_guard(store, repo, diff, graph=graph, judge=body.judge)
+        report = run_guard(store, repo, diff, graph=graph, judge=body.judge, source_pr=source_pr)
     except JudgeError as exc:
         logger.error("Guard judge error: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -283,7 +295,8 @@ def ingest(body: IngestBody, request: Request) -> dict[str, Any]:
 
             snapshot, graph, diff = _load_pr_snapshot(body.pr_url, progress)
             _cache.clear()
-            report = run_guard(_store(), snapshot["repo"], diff, graph=graph, judge=body.judge)
+            _repo_name, source_pr = parse_pr_url(body.pr_url)
+            report = run_guard(_store(), snapshot["repo"], diff, graph=graph, judge=body.judge, source_pr=source_pr)
             job["result"] = {
                 "repo": snapshot["repo"],
                 "graph": graph,

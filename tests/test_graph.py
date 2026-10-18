@@ -19,7 +19,12 @@ def store():
         current.query("rationale_test_probe", "RETURN 1 AS ok")
     except Exception as exc:  # pragma: no cover - environment failure
         pytest.fail(f"FalkorDB is not reachable: {exc}")
-    return current
+    yield current
+    for name in ("rationale_test_probe", "rationale_test_mini"):
+        try:
+            current.delete_graph(name)
+        except Exception:
+            pass
 
 
 def _mini() -> dict:

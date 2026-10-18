@@ -28,10 +28,14 @@ export default function App() {
   const [repo, setRepo] = useState("paperclipai/paperclip");
   const [graph, setGraph] = useState("");
   const [lastDiff, setLastDiff] = useState("");
+  const [authorName, setAuthorName] = useState("");
 
-  async function refreshHealth() {
+  async function refreshHealth(selectedGraph) {
+    const target = selectedGraph === undefined ? graph : selectedGraph;
+    const params = new URLSearchParams();
+    if (target) params.set("graph", target);
     try {
-      const response = await fetch("/api/health");
+      const response = await fetch(`/api/health${params.toString() ? `?${params}` : ""}`);
       if (!response.ok) {
         setHealth(null);
         setHealthError(await readError(response));
@@ -46,12 +50,15 @@ export default function App() {
   }
 
   useEffect(() => {
-    refreshHealth();
-    const timer = setInterval(refreshHealth, 8000);
     fetch("/api/samples").then((response) => response.json()).then((body) => setSamples(body.samples || [])).catch(() => setSamples([]));
     refreshLearned("paperclipai/paperclip", "");
-    return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    refreshHealth(graph);
+    const timer = setInterval(() => refreshHealth(graph), 8000);
+    return () => clearInterval(timer);
+  }, [graph]);
 
   async function refreshLearned(nextRepo, nextGraph) {
     const params = new URLSearchParams({ repo: nextRepo || repo });
@@ -123,6 +130,11 @@ export default function App() {
   async function feedback(decisionId, kind) {
     const text = window.prompt(`Reason for ${kind}`);
     if (!text) return;
+    const by = authorName.trim();
+    if (!by) {
+      setError("Enter your name before ack, override, or wrong. That name is stored on the correction.");
+      return;
+    }
     setError("");
     const response = await fetch("/api/feedback", {
       method: "POST",
@@ -133,7 +145,7 @@ export default function App() {
         decision_id: decisionId,
         kind,
         text,
-        by: "you",
+        by,
       }),
     });
     if (!response.ok) {
@@ -156,7 +168,7 @@ export default function App() {
         </div>
         <div className={offline ? "health off" : "health on"}>
           <strong>{offline ? "Graph offline" : "Graph online"}</strong>
-          <span>{health ? `${health.graph} · ${health.nodes} nodes` : healthError || "Checking FalkorDB"}</span>
+          <span>{health ? `${health.graph} · ${health.nodes} nodes · ${health.edges ?? 0} edges` : healthError || "Checking FalkorDB"}</span>
         </div>
       </header>
       {offline && <div className="banner">Graph offline — retrying. Submit stays disabled until FalkorDB answers a real count query.</div>}
@@ -185,7 +197,9 @@ export default function App() {
               <option key={item.graph} value={item.graph}>{item.repo || item.graph}</option>
             ))}
           </select>
-          <p className="meta">Pasted diffs use {repo}. A pull request URL builds or updates that repository's graph, then guards the diff.</p>
+          <p className="meta">Pasted diffs use {repo}. A pull request URL builds or updates that repository's graph, then guards the diff. Decisions extracted from that same PR are not judged against it.</p>
+          <label>Your name</label>
+          <input type="text" placeholder="Name recorded on ack, override, and wrong" value={authorName} onChange={(event) => setAuthorName(event.target.value)} />
           <label>Diff or public pull request</label>
           <textarea value={diff} onChange={(event) => { setDiff(event.target.value); setActiveSample(""); setPrUrl(""); }} placeholder="Paste a unified diff" />
           <div className="row">

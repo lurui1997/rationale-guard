@@ -119,13 +119,20 @@ def call_tool(name: str | None, arguments: dict[str, Any]) -> dict[str, Any]:
     store = Store()
     if name == "guard_diff":
         diff = arguments.get("diff") or ""
-        if arguments.get("pr_url") and not diff.strip():
-            from rationale.api.main import _diff_for_pr
+        source_pr = None
+        if arguments.get("pr_url"):
+            from rationale.ingest.pipeline import parse_pr_url
 
-            diff = _diff_for_pr(arguments["pr_url"])
+            _pr_repo, source_pr = parse_pr_url(arguments["pr_url"])
+            if not diff.strip():
+                from rationale.api.main import _diff_for_pr
+
+                diff = _diff_for_pr(arguments["pr_url"])
+                repo = _pr_repo
+                graph = graph_name_for_repo(repo)
         if not diff.strip():
             raise ValueError("guard_diff requires diff or pr_url")
-        return run_guard(store, repo, diff, graph=graph, judge=arguments.get("judge"))
+        return run_guard(store, repo, diff, graph=graph, judge=arguments.get("judge"), source_pr=source_pr)
     if name == "why":
         decision_id = arguments.get("decision_id")
         if not decision_id and arguments.get("question"):

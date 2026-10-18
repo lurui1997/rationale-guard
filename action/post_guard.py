@@ -56,7 +56,7 @@ def handle_comment(api_url: str, token: str, repository: str, event: dict) -> in
     if not text:
         print("A reason is required.", file=sys.stderr)
         return 1
-    user = ((event.get("comment") or {}).get("user") or {}).get("login") or "unknown"
+    user = ((event.get("comment") or {}).get("user") or {}).get("login") or os.environ.get("GITHUB_ACTOR") or "unknown"
     association = ((event.get("comment") or {}).get("author_association")) or ""
     if not _can_write(token, repository, user, association):
         _comment(
