@@ -1,4 +1,6 @@
-"""Who to ask. PageRank and betweenness run on the Person collaboration graph; degree is the recorded fallback."""
+"""Who to ask. PageRank and betweenness read the Person collaboration graph.
+
+``COLLABORATED`` edges are written when a snapshot is loaded. Lookups here do not MERGE."""
 
 from __future__ import annotations
 
@@ -8,13 +10,6 @@ from typing import Any
 from rationale.db import GraphError, Store
 
 logger = logging.getLogger(__name__)
-
-COLLAB = """
-MATCH (p1:Person)-[:EDITED]->(f:File)<-[:EDITED]-(p2:Person)
-WHERE p1.is_bot = false AND p2.is_bot = false AND p1.id < p2.id
-MERGE (p1)-[:COLLABORATED]->(p2)
-MERGE (p2)-[:COLLABORATED]->(p1)
-"""
 
 LOCAL_PEOPLE = """
 MATCH (p:Person)-[:EDITED]->(f:File)
@@ -76,9 +71,6 @@ def experts_for_paths(store: Store, graph: str, paths: list[str]) -> tuple[list[
     traces: list[dict[str, Any]] = []
     if not paths:
         return [], traces
-    _, collab_trace = store.query(graph, COLLAB)
-    collab_trace["name"] = "collaborated_edges"
-    traces.append(collab_trace)
     local_rows, local_trace = store.query(graph, LOCAL_PEOPLE, {"paths": paths})
     local_trace["name"] = "local_people"
     traces.append(local_trace)

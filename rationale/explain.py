@@ -60,8 +60,17 @@ def why(store: Store, graph: str, decision_id: str) -> dict[str, Any]:
     alt_trace["name"] = "alternatives"
     premise = premises.get(decision_id, {"status": "holds", "rules": []})
     chain = []
+    seen_chain: set[str] = set()
+
+    def _push(node: dict[str, Any]) -> None:
+        node_id = node.get("id")
+        if not node_id or node_id in seen_chain:
+            return
+        seen_chain.add(node_id)
+        chain.append(node)
+
     if row.get("source_id"):
-        chain.append(
+        _push(
             {
                 "id": row["source_id"],
                 "title": row.get("source_title") or row["source_id"],
@@ -70,8 +79,10 @@ def why(store: Store, graph: str, decision_id: str) -> dict[str, Any]:
             }
         )
     for item in chain_rows:
+        if item.get("source_id"):
+            _push({"id": item["source_id"], "title": item["source_id"]})
         if item.get("other_id"):
-            chain.append(
+            _push(
                 {
                     "id": item["other_id"],
                     "title": item.get("other_title") or item["other_id"],

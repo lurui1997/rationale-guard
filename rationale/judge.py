@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Any
 
 from rationale.diffutil import ParsedDiff
@@ -16,6 +17,10 @@ from rationale.llm import LLMError, chat_json, normalize_verdict_payload
 from rationale.settings import guard_judge_mode, llm_api_key, llm_model
 
 logger = logging.getLogger(__name__)
+
+# One provider call should finish inside this window. Candidates run together so a
+# diff does not pay the sum of five sequential round trips. p50 target is under 3s.
+JUDGE_TIMEOUT = 8.0
 
 
 class JudgeError(RuntimeError):
@@ -60,7 +65,31 @@ def resolve_judge_mode(requested: str | None = None) -> str:
     return "offline"
 
 
+def judge_candidates(decisions: list[dict[str, Any]], parsed: ParsedDiff, mode: str) -> list[dict[str, Any]]:
+    """Judge every candidate. LLM calls run concurrently and time out instead of falling back."""
+    if len(decisions) <= 1 or mode != "llm":
+        return [judge_candidate(item, parsed, mode) for item in decisions]
+    workers = min(5, len(decisions))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(judge_candidate, item, parsed, mode) for item in decisions]
+        try:
+            return [future.result(timeout=JUDGE_TIMEOUT + 1) for future in futures]
+        except FuturesTimeout as exc:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise JudgeError("LLM judge timed out. Offline judge was not used.") from exc
+        except Exception:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+
+
 def judge_candidate(decision: dict[str, Any], parsed: ParsedDiff, mode: str) -> dict[str, Any]:
+    if decision.get("extractor") == "correction":
+        return {
+            "verdict": "unrelated",
+            "judge": mode,
+            "reason": "This node is an override note. It permits the change and is not a decision to contradict.",
+            "hunk_ref": parsed.paths[0] if parsed.paths else "",
+        }
     if mode == "offline":
         verdict = judge_offline(decision, parsed)
         verdict["judge"] = "offline"
@@ -96,7 +125,7 @@ def judge_llm(decision: dict[str, Any], parsed: ParsedDiff) -> dict[str, Any]:
         f"DIFF:\n" + "\n".join(hunks)
     )
     try:
-        payload = chat_json(JUDGE_SYSTEM, user, timeout=45)
+        payload = chat_json(JUDGE_SYSTEM, user, timeout=JUDGE_TIMEOUT)
         parsed_payload = normalize_verdict_payload(payload)
     except (LLMError, ValueError) as exc:
         raise JudgeError(str(exc)) from exc

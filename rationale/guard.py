@@ -13,7 +13,7 @@ from typing import Any
 from rationale.db import Store, graph_name_for_repo
 from rationale.diffutil import ParsedDiff, parse_diff
 from rationale.experts import experts_for_paths
-from rationale.judge import JudgeError, judge_candidate, resolve_judge_mode
+from rationale.judge import JudgeError, judge_candidates, resolve_judge_mode
 from rationale.premises import check_premises
 
 CANDIDATE_QUERIES = [
@@ -24,6 +24,7 @@ CANDIDATE_QUERIES = [
         MATCH (pr:PR)-[:TOUCHES]->(f)
         MATCH (d:Decision)-[:DERIVED_FROM]->(pr)
         WHERE coalesce(d.status, 'accepted') <> 'superseded'
+          AND coalesce(d.extractor, '') <> 'correction'
         RETURN d.id AS decision_id, d.summary AS summary, d.source_quote AS quote,
                d.source_url AS source_url, d.status AS status, d.confidence AS confidence,
                d.rationale AS rationale, d.wrong_count AS wrong_count, d.symbols AS symbols,
@@ -38,6 +39,7 @@ CANDIDATE_QUERIES = [
         MATCH (pr:PR)-[:TOUCHES]->(f)
         MATCH (pr)-[:FIXES]->(i:Issue)<-[:DERIVED_FROM]-(d:Decision)
         WHERE coalesce(d.status, 'accepted') <> 'superseded'
+          AND coalesce(d.extractor, '') <> 'correction'
         RETURN d.id AS decision_id, d.summary AS summary, d.source_quote AS quote,
                d.source_url AS source_url, d.status AS status, d.confidence AS confidence,
                d.rationale AS rationale, d.wrong_count AS wrong_count, d.symbols AS symbols,
@@ -52,6 +54,7 @@ CANDIDATE_QUERIES = [
         MATCH (pr:PR)-[:TOUCHES]->(f)
         MATCH (pr)-[:REFERENCES]->(i:Issue)<-[:DERIVED_FROM]-(d:Decision)
         WHERE coalesce(d.status, 'accepted') <> 'superseded'
+          AND coalesce(d.extractor, '') <> 'correction'
         RETURN d.id AS decision_id, d.summary AS summary, d.source_quote AS quote,
                d.source_url AS source_url, d.status AS status, d.confidence AS confidence,
                d.rationale AS rationale, d.wrong_count AS wrong_count, d.symbols AS symbols,
@@ -66,6 +69,7 @@ CANDIDATE_QUERIES = [
         MATCH (pr:PR)-[:TOUCHES]->(f)
         MATCH (pr)-[:ADDS]->(doc:Doc)<-[:DERIVED_FROM]-(d:Decision)
         WHERE coalesce(d.status, 'accepted') <> 'superseded'
+          AND coalesce(d.extractor, '') <> 'correction'
         RETURN d.id AS decision_id, d.summary AS summary, d.source_quote AS quote,
                d.source_url AS source_url, d.status AS status, d.confidence AS confidence,
                d.rationale AS rationale, d.wrong_count AS wrong_count, d.symbols AS symbols,
@@ -79,6 +83,7 @@ CANDIDATE_QUERIES = [
         MATCH (f:File) WHERE f.path IN $paths
         MATCH (d:Decision)-[:DERIVED_FROM]->(doc:Doc)
         WHERE doc.path = f.path AND coalesce(d.status, 'accepted') <> 'superseded'
+          AND coalesce(d.extractor, '') <> 'correction'
         RETURN d.id AS decision_id, d.summary AS summary, d.source_quote AS quote,
                d.source_url AS source_url, d.status AS status, d.confidence AS confidence,
                d.rationale AS rationale, d.wrong_count AS wrong_count, d.symbols AS symbols,
@@ -93,6 +98,7 @@ SYMBOL_QUERY = (
     """
     MATCH (d:Decision)
     WHERE coalesce(d.status, 'accepted') <> 'superseded'
+      AND coalesce(d.extractor, '') <> 'correction'
       AND any(sym IN d.symbols WHERE sym IN $symbols)
     RETURN d.id AS decision_id, d.summary AS summary, d.source_quote AS quote,
            d.source_url AS source_url, d.status AS status, d.confidence AS confidence,
@@ -180,8 +186,11 @@ def run_guard(
                     "paths": [],
                     "hops": [],
                     "vias": [],
+                    "queries": [],
                 },
             )
+            if name not in bucket["queries"]:
+                bucket["queries"].append(name)
             path = row.get("path") or ""
             if path and path not in bucket["paths"]:
                 bucket["paths"].append(path)
@@ -212,20 +221,28 @@ def run_guard(
     learned_rows, learned_trace = store.query(graph_name, LEARNED_QUERY, {"paths": params["paths"]})
     learned_trace["name"] = "learned_overrides"
     traces.append(learned_trace)
-    touched = parsed.paths or []
+    diff_paths = list(parsed.paths)
+    touched = list(diff_paths)
     for item in chosen:
-        touched.extend(item["paths"])
-    ask, expert_traces = experts_for_paths(store, graph_name, list(dict.fromkeys(touched))[:30])
+        for path in item["paths"]:
+            if path and path not in touched:
+                touched.append(path)
+    ask, expert_traces = experts_for_paths(store, graph_name, touched[:30])
     traces.extend(expert_traces)
     graph_ms = round((time.perf_counter() - started) * 1000, 2)
+    trace_by_name = _dedupe_traces(traces)
 
-    findings = []
     for item in chosen:
         item["alternatives"] = alternatives.get(item["id"], [])
-        verdict = judge_candidate(item, parsed, mode)
+    verdicts = judge_candidates(chosen, parsed, mode)
+    findings = []
+    unrelated = 0
+    for item, verdict in zip(chosen, verdicts):
         if verdict["verdict"] == "unrelated":
+            unrelated += 1
             continue
         learned = _latest(corrections.get(item["id"], []))
+        premise = premises.get(item["id"], {"status": "holds", "rules": []})
         findings.append(
             {
                 "decision_id": item["id"],
@@ -239,12 +256,12 @@ def run_guard(
                 "status": item["status"],
                 "score": item["score"],
                 "hops": item["hops"],
-                "premise": premises.get(item["id"], {"status": "holds", "rules": []}),
+                "premise": premise,
                 "rejected_alternatives": item["alternatives"],
                 "ask": ask,
                 "learned_from": learned,
-                "subgraph": _subgraph(item, premises.get(item["id"]), item["alternatives"], learned, ask),
-                "cypher_trace": traces,
+                "subgraph": _subgraph(item, premise, item["alternatives"], learned, ask),
+                "cypher_trace": _finding_trace(item, premise, trace_by_name),
             }
         )
     contradicting = [
@@ -253,7 +270,7 @@ def run_guard(
         if finding["verdict"] == "contradicts" and (not finding["learned_from"] or finding["learned_from"]["kind"] != "ack")
     ]
     status = "warn" if contradicting else "pass"
-    summary = _summary(status, findings, learned_rows)
+    summary = _summary(status, findings, learned_rows, judged=len(chosen), unrelated=unrelated)
     return {
         "repo": repo,
         "graph": graph_name,
@@ -261,10 +278,10 @@ def run_guard(
         "summary": summary,
         "judge": mode,
         "graph_ms": graph_ms,
-        "paths": parsed.paths,
+        "paths": diff_paths,
         "findings": findings,
         "learned": learned_rows,
-        "cypher_trace": traces,
+        "cypher_trace": list(trace_by_name.values()),
     }
 
 
@@ -354,7 +371,39 @@ def _subgraph(item: dict[str, Any], premise: dict[str, Any] | None, alternatives
     return {"nodes": dedup_nodes, "edges": dedup_edges}
 
 
-def _summary(status: str, findings: list[dict[str, Any]], learned: list[dict[str, Any]]) -> str:
+def _dedupe_traces(traces: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for trace in traces:
+        name = trace.get("name") or "query"
+        if name not in deduped:
+            deduped[name] = trace
+    return deduped
+
+
+def _finding_trace(item: dict[str, Any], premise: dict[str, Any], trace_by_name: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Queries that selected this decision and the premise rules that hit it. Not the whole guard trace."""
+    names = list(item.get("queries") or [])
+    if item.get("alternatives"):
+        names.append("rejected_alternatives")
+    names.extend(rule.get("id") for rule in (premise.get("rules") or []) if rule.get("id"))
+    names.append("corrections")
+    seen: set[str] = set()
+    own: list[dict[str, Any]] = []
+    for name in names:
+        if not name or name in seen or name not in trace_by_name:
+            continue
+        seen.add(name)
+        own.append(trace_by_name[name])
+    return own
+
+
+def _summary(
+    status: str,
+    findings: list[dict[str, Any]],
+    learned: list[dict[str, Any]],
+    judged: int = 0,
+    unrelated: int = 0,
+) -> str:
     contradicts = [finding for finding in findings if finding["verdict"] == "contradicts"]
     if status == "warn":
         first = contradicts[0]
@@ -367,4 +416,9 @@ def _summary(status: str, findings: list[dict[str, Any]], learned: list[dict[str
         )
     if findings:
         return "No contradiction. Related decisions are listed and were not judged to be reversals."
+    if judged and unrelated:
+        return (
+            f"The graph found {judged} past decision(s) on these files. "
+            "The judge marked them unrelated to this diff."
+        )
     return "No past decision in this graph touches the changed files."
